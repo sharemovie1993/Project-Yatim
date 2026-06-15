@@ -98,6 +98,7 @@ export default function Billing() {
   const [licenseKey, setLicenseKey] = useState('');
   const [vpnLicenseKey, setVpnLicenseKey] = useState('');
   const [selectedProduct, setSelectedProduct] = useState('app'); // 'app' | 'vpn'
+  const [includeVpnAddon, setIncludeVpnAddon] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Billing states
@@ -467,7 +468,8 @@ export default function Billing() {
           product_id: selectedProduct === 'vpn' ? 'vpn-tunnel' : 'project-yatim',
           plan_id: selectedPackage,
           payment_method: selectedChannel,
-          requested_slug: tenant?.domain_or_slug || null
+          requested_slug: tenant?.domain_or_slug || null,
+          include_vpn: selectedProduct === 'app' ? includeVpnAddon : false
         })
       });
       const data = await res.json();
@@ -1275,6 +1277,23 @@ export default function Billing() {
                   </div>
                 </div>
 
+                {selectedProduct === 'app' && (
+                  <div style={styles.addonContainer}>
+                    <label style={styles.addonLabel}>
+                      <input
+                        type="checkbox"
+                        checked={includeVpnAddon}
+                        onChange={(e) => setIncludeVpnAddon(e.target.checked)}
+                        style={styles.addonCheckbox}
+                      />
+                      <div style={styles.addonTextWrapper}>
+                        <span style={styles.addonTitle}>🔌 Tambahkan Online Gateway (VPN Tunnel Addon)</span>
+                        <span style={styles.addonDesc}>Meng-online-kan aplikasi server lokal agar dapat diakses dari luar sekolah via subdomain <strong>{tenant?.domain_or_slug ? `${tenant.domain_or_slug}.absenta.id` : 'absenta.id'}</strong> (+Rp 50.000 / Bulan)</span>
+                      </div>
+                    </label>
+                  </div>
+                )}
+
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Metode Pembayaran (Tripay) *</label>
                   <div style={styles.channelsGrid}>
@@ -1906,4 +1925,40 @@ const styles = {
     color: isPaid ? '#10b981' : '#f59e0b',
     border: '1px solid ' + (isPaid ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)')
   }),
+  addonContainer: {
+    backgroundColor: 'rgba(16, 185, 129, 0.04)',
+    border: '1px dashed rgba(16, 185, 129, 0.3)',
+    borderRadius: '10px',
+    padding: '14px',
+    marginBottom: '20px',
+    textAlign: 'left'
+  },
+  addonLabel: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+    cursor: 'pointer',
+    userSelect: 'none'
+  },
+  addonCheckbox: {
+    marginTop: '3px',
+    width: '16px',
+    height: '16px',
+    cursor: 'pointer'
+  },
+  addonTextWrapper: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px'
+  },
+  addonTitle: {
+    fontSize: '12.5px',
+    fontWeight: '700',
+    color: 'hsl(var(--foreground))'
+  },
+  addonDesc: {
+    fontSize: '11px',
+    color: 'hsl(var(--muted-foreground))',
+    lineHeight: '1.4'
+  },
 };
