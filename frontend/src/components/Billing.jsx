@@ -16,6 +16,13 @@ const formatPrice = (price) => {
 
 const getLimitInfo = (pkg) => {
   if (!pkg) return { mustahiq: '', storage: '' };
+  if (pkg.product_id === 'vpn-tunnel' || (pkg.id && pkg.id.includes('vpn'))) {
+    const dur = pkg.duration || '30 Hari';
+    return {
+      mustahiq: 'Bandwidth Tanpa Batas',
+      storage: `Masa Aktif: ${dur}`
+    };
+  }
   if (pkg.device_limit === 100 || (pkg.id && pkg.id.includes('basic'))) {
     return {
       mustahiq: 'Maks. 100 Mustahiq',
@@ -36,6 +43,30 @@ const getLimitInfo = (pkg) => {
 
 const getPlanFromDetails = (schoolName, deviceLimit) => {
   const name = (schoolName || '').toLowerCase();
+  if (name.includes('vpn') || name.includes('tunnel')) {
+    if (name.includes('tahun') || name.includes('annual')) {
+      return {
+        title: 'VPN Tunneling Tahunan',
+        price: 480000,
+        mustahiq: 'Bandwidth Tanpa Batas',
+        storage: 'Masa Aktif: 365 Hari'
+      };
+    }
+    if (name.includes('sem') || name.includes('semester')) {
+      return {
+        title: 'VPN Tunneling Semester',
+        price: 250000,
+        mustahiq: 'Bandwidth Tanpa Batas',
+        storage: 'Masa Aktif: 180 Hari'
+      };
+    }
+    return {
+      title: 'VPN Tunneling Bulanan',
+      price: 50000,
+      mustahiq: 'Bandwidth Tanpa Batas',
+      storage: 'Masa Aktif: 30 Hari'
+    };
+  }
   if (name.includes('basic') || deviceLimit === 100) {
     return {
       title: 'Mustahiq Care Basic (Lifetime)',
@@ -65,6 +96,8 @@ export default function Billing() {
   const [tenant, setTenant] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [licenseKey, setLicenseKey] = useState('');
+  const [vpnLicenseKey, setVpnLicenseKey] = useState('');
+  const [selectedProduct, setSelectedProduct] = useState('app'); // 'app' | 'vpn'
   const [loading, setLoading] = useState(true);
 
   // Billing states
@@ -193,6 +226,21 @@ export default function Billing() {
     }
   };
 
+  const loadPackages = async (prodId) => {
+    try {
+      const pkgRes = await fetch(`${LICENSE_SERVER_URL}/api/license/packages?product_id=${prodId}`);
+      const pkgData = await pkgRes.json();
+      if (pkgData.success) {
+        setPackages(pkgData.data || []);
+        if (pkgData.data?.length > 0) {
+          setSelectedPackage(pkgData.data[0].id);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load packages:', err);
+    }
+  };
+
   const loadData = async () => {
     try {
       const profile = await ApiService.getTenantProfile();
@@ -200,15 +248,8 @@ export default function Billing() {
       if (profile.data?.license_key) {
         setLicenseKey(profile.data.license_key);
       }
-
-      // Fetch packages
-      const pkgRes = await fetch(`${LICENSE_SERVER_URL}/api/license/packages?product_id=project-yatim`);
-      const pkgData = await pkgRes.json();
-      if (pkgData.success) {
-        setPackages(pkgData.data || []);
-        if (pkgData.data?.length > 0) {
-          setSelectedPackage(pkgData.data[0].id);
-        }
+      if (profile.data?.settings?.vpn_license_key) {
+        setVpnLicenseKey(profile.data.settings.vpn_license_key);
       }
 
       // Fetch payment channels
@@ -285,6 +326,10 @@ export default function Billing() {
     }
   }, []);
 
+  useEffect(() => {
+    loadPackages(selectedProduct === 'vpn' ? 'vpn-tunnel' : 'project-yatim');
+  }, [selectedProduct]);
+
   // Poll status every 5 seconds when there is a pending invoice
   useEffect(() => {
     if (!pendingKey) return;
@@ -328,6 +373,20 @@ export default function Billing() {
     }
   };
 
+  const handleSaveVpnLicenseKey = async () => {
+    if (!vpnLicenseKey.trim()) {
+      await showAlert('Masukkan kunci lisensi VPN.');
+      return;
+    }
+    try {
+      await ApiService.updateTenantProfile(null, { vpn_license_key: vpnLicenseKey.trim() });
+      await showAlert('Kunci lisensi VPN berhasil disimpan.');
+      await loadData();
+    } catch (err) {
+      await showAlert('Gagal menyimpan lisensi VPN: ' + err.message);
+    }
+  };
+
   const handleRequestLicense = async (e) => {
     e.preventDefault();
     if (!schoolNameInput.trim()) {
@@ -346,9 +405,10 @@ export default function Billing() {
           school_name: `${schoolNameInput.trim()} (${activePack?.title || 'Unlimited'})`,
           device_limit: activePack ? activePack.device_limit : 99999,
           is_unlimited: activePack ? activePack.is_unlimited : 1,
-          product_id: 'project-yatim',
+          product_id: selectedProduct === 'vpn' ? 'vpn-tunnel' : 'project-yatim',
           plan_id: selectedPackage,
-          payment_method: selectedChannel
+          payment_method: selectedChannel,
+          requested_slug: tenant?.domain_or_slug || null
         })
       });
       const data = await res.json();
@@ -398,8 +458,14 @@ export default function Billing() {
         const isActive = licenseDetails.is_active === 1 || status === 'active';
 
         if (isActive) {
-          await ApiService.updateTenantProfile(null, { license_key: key });
-          await ApiService.syncLicense();
+          const isVpnProduct = licenseDetails.product_id === 'vpn-tunnel';
+          if (isVpnProduct) {
+            await ApiService.updateTenantProfile(null, { vpn_license_key: key });
+            setVpnLicenseKey(key);
+          } else {
+            await ApiService.updateTenantProfile(null, { license_key: key });
+            await ApiService.syncLicense();
+          }
           
           // Cache the invoice as active receipt
           const plan = getPlanFromDetails(licenseDetails.school_name, licenseDetails.device_limit);
@@ -425,7 +491,7 @@ export default function Billing() {
           localStorage.removeItem('@license_pending_invoice');
           setPendingKey('');
           setPaymentDetails(null);
-          await showAlert('Pembayaran Berhasil! Lisensi Anda telah aktif.');
+          await showAlert(isVpnProduct ? 'Pembayaran Berhasil! Lisensi VPN Anda telah aktif.' : 'Pembayaran Berhasil! Lisensi Anda telah aktif.');
           await loadData();
         } else {
           if (invoiceData) {
@@ -624,6 +690,18 @@ export default function Billing() {
             </div>
             <p style={styles.cardDesc}>Online-kan aplikasi server lokal ini agar dapat diakses dari luar jaringan sekolah menggunakan secure VPN Tunnel.</p>
             
+            <div style={{ marginBottom: '16px', display: 'flex', gap: '8px' }}>
+              <input
+                type="text"
+                className="input"
+                placeholder="Masukkan Kunci Lisensi VPN (VPN License Key)"
+                value={vpnLicenseKey}
+                onChange={(e) => setVpnLicenseKey(e.target.value)}
+                style={styles.licInput}
+              />
+              <button className="btn btn-accent" style={styles.saveBtn} onClick={handleSaveVpnLicenseKey}>Simpan</button>
+            </div>
+
             <div style={styles.tunnelStatusBox}>
               {tunnelStatus.status === 'not_configured' ? (
                 <div style={styles.licenseValid}>
@@ -636,7 +714,7 @@ export default function Billing() {
                       {tenant?.domain_or_slug ? `${tenant.domain_or_slug}.absenta.id` : 'Memuat subdomain...'}
                     </strong>
                     <p style={{ fontSize: '11.5px', color: 'hsl(var(--muted-foreground))', marginTop: '6px' }}>
-                      *Membutuhkan kunci lisensi aktif. Setelah diaktifkan, server lokal akan di-routing otomatis oleh gateway VPS.
+                      *Membutuhkan kunci lisensi VPN aktif. Setelah diaktifkan, server lokal akan di-routing otomatis oleh gateway VPS.
                     </p>
                   </div>
                 </div>
@@ -686,7 +764,7 @@ export default function Billing() {
                 className="btn btn-primary" 
                 style={styles.syncBtn} 
                 onClick={handleRequestTunnel}
-                disabled={requestingTunnel || !tenant?.license_key}
+                disabled={requestingTunnel || !vpnLicenseKey}
               >
                 {requestingTunnel ? 'Mengaktifkan Gateway...' : '🔑 Daftarkan & Aktifkan Online Gateway'}
               </button>
@@ -874,7 +952,52 @@ export default function Billing() {
             /* ORDER FORM */
             <div className="card" style={styles.card}>
               <h3 style={styles.cardTitle}>Pembelian & Perpanjang Lisensi</h3>
-              <p style={styles.cardDesc}>Pilih paket lisensi Lifetime (Beli Sekali) sesuai kebutuhan instansi Anda</p>
+              
+              {/* Product Type Toggle */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '10px' }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedProduct('app')}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    backgroundColor: selectedProduct === 'app' ? 'hsl(var(--primary))' : 'transparent',
+                    color: selectedProduct === 'app' ? 'white' : 'hsl(var(--foreground))',
+                    border: '1px solid ' + (selectedProduct === 'app' ? 'hsl(var(--primary))' : 'hsl(var(--border))'),
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  🌙 Aplikasi Mustahiq Care
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedProduct('vpn')}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: 'bold',
+                    backgroundColor: selectedProduct === 'vpn' ? 'hsl(var(--primary))' : 'transparent',
+                    color: selectedProduct === 'vpn' ? 'white' : 'hsl(var(--foreground))',
+                    border: '1px solid ' + (selectedProduct === 'vpn' ? 'hsl(var(--primary))' : 'hsl(var(--border))'),
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  🌐 Online Gateway (VPN)
+                </button>
+              </div>
+
+              <p style={styles.cardDesc}>
+                {selectedProduct === 'vpn' 
+                  ? 'Pilih paket VPN Tunneling agar server lokal Anda dapat diakses online via subdomain absenta.id' 
+                  : 'Pilih paket lisensi Lifetime (Beli Sekali) sesuai kebutuhan instansi Anda'}
+              </p>
               
               <form onSubmit={handleRequestLicense} style={styles.billingForm}>
                 <div style={styles.inputGroup}>
@@ -1256,7 +1379,7 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '4px',
-    gridColumn: pkgId.includes('enterprise') ? 'span 2' : 'span 1',
+    gridColumn: (pkgId.includes('enterprise') || pkgId.includes('annual')) ? 'span 2' : 'span 1',
   }),
   pkgTitle: {
     fontWeight: '700',

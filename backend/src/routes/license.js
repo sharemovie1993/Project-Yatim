@@ -90,8 +90,10 @@ router.post('/tunnel/request', verifyToken, requireAdmin, async (req, res) => {
       return res.status(404).json({ success: false, error: 'Tenant not found.' });
     }
 
-    if (!tenant.license_key) {
-      return res.status(400).json({ success: false, error: 'Kunci lisensi belum dikonfigurasi. Silakan aktifkan lisensi terlebih dahulu.' });
+    const settings = JSON.parse(tenant.settings || '{}');
+    const vpnLicenseKey = settings.vpn_license_key;
+    if (!vpnLicenseKey) {
+      return res.status(400).json({ success: false, error: 'Kunci lisensi VPN belum dikonfigurasi. Silakan simpan lisensi VPN terlebih dahulu.' });
     }
 
     const { subdomain_slug } = req.body;
@@ -107,7 +109,7 @@ router.post('/tunnel/request', verifyToken, requireAdmin, async (req, res) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        license_key: tenant.license_key,
+        license_key: vpnLicenseKey.trim(),
         subdomain_slug,
         local_port: parseInt(localPort),
         frontend_port: parseInt(frontendPort)
