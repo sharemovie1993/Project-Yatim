@@ -50,11 +50,33 @@ try {
     Write-Host "OK ($nodeVer)" -ForegroundColor Green
     $hasNode = $true
 } catch {
-    Write-Host "GAGAL" -ForegroundColor Red
-    Write-Host "Kesalahan: Node.js tidak terdeteksi di sistem Anda!" -ForegroundColor Red
-    Write-Host "Silakan unduh dan instal Node.js versi LTS (versi 18+) dari https://nodejs.org/" -ForegroundColor Yellow
-    Read-Host "Tekan [ENTER] untuk keluar..."
-    Exit
+    Write-Host "BELUM TERPASANG" -ForegroundColor Yellow
+    $hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
+    if ($hasWinget) {
+        Write-Host "Sistem mendeteksi Windows Package Manager (winget) tersedia." -ForegroundColor Cyan
+        Write-Host "Apakah Anda ingin memasang Node.js LTS secara otomatis?"
+        Write-Host "Tekan [Y] untuk memasang Node.js, atau tombol lain untuk melewatinya."
+        $nodeKey = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        if ($nodeKey.Character -eq 'y' -or $nodeKey.Character -eq 'Y') {
+            Write-Host "Memulai pemasangan Node.js LTS... Mohon tunggu..." -ForegroundColor Cyan
+            Start-Process winget -ArgumentList "install OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements" -Wait
+            try {
+                $nodeVer = node -v
+                Write-Host "Node.js berhasil terpasang!" -ForegroundColor Green
+                $hasNode = $true
+            } catch {
+                Write-Host "Pemasangan selesai. Anda perlu membuka kembali terminal baru untuk menjalankan perintah node." -ForegroundColor Yellow
+                $hasNode = $true
+            }
+        }
+    }
+    
+    if (-not $hasNode) {
+        Write-Host "Kesalahan: Node.js tidak terdeteksi di sistem Anda!" -ForegroundColor Red
+        Write-Host "Silakan unduh dan instal Node.js versi LTS (versi 18+) dari https://nodejs.org/" -ForegroundColor Yellow
+        Read-Host "Tekan [ENTER] untuk keluar..."
+        Exit
+    }
 }
 
 Write-Host "Memeriksa NPM... " -NoNewline
@@ -92,6 +114,34 @@ if ($pm2Path) {
         }
     } else {
         Write-Host "Pemasangan PM2 dilewati." -ForegroundColor Gray
+    }
+}
+
+# Memeriksa WireGuard Client
+Write-Host "Memeriksa WireGuard Client... " -NoNewline
+$hasWG = Test-Path "C:\Program Files\WireGuard\wireguard.exe"
+if ($hasWG) {
+    Write-Host "OK (Terpasang)" -ForegroundColor Green
+} else {
+    Write-Host "BELUM TERPASANG" -ForegroundColor Yellow
+    $hasWinget = $null -ne (Get-Command winget -ErrorAction SilentlyContinue)
+    if ($hasWinget) {
+        Write-Host ""
+        Write-Host "Info: WireGuard Client dibutuhkan jika Anda ingin menggunakan fitur Online Gateway (VPN Tunnel)." -ForegroundColor Gray
+        Write-Host "Apakah Anda ingin memasang WireGuard Client secara otomatis?"
+        Write-Host "Tekan [Y] untuk memasang WireGuard, atau tombol lain untuk melewatinya."
+        $wgKey = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+        if ($wgKey.Character -eq 'y' -or $wgKey.Character -eq 'Y') {
+            Write-Host "Memulai pemasangan WireGuard Client... Mohon tunggu..." -ForegroundColor Cyan
+            Start-Process winget -ArgumentList "install WireGuard.WireGuard --silent --accept-package-agreements --accept-source-agreements" -Wait
+            if (Test-Path "C:\Program Files\WireGuard\wireguard.exe") {
+                Write-Host "WireGuard Client berhasil terpasang!" -ForegroundColor Green
+            } else {
+                Write-Host "Pemasangan selesai. Silakan verifikasi ketersediaan aplikasi WireGuard." -ForegroundColor Yellow
+            }
+        }
+    } else {
+        Write-Host "Info: WireGuard Client tidak terdeteksi. Silakan unduh dari https://www.wireguard.com/install/ jika ingin menggunakan VPN Tunnel." -ForegroundColor Yellow
     }
 }
 
