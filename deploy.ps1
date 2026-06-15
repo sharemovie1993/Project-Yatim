@@ -356,12 +356,12 @@ if ($usePM2) {
 
     Write-Host "Memulai server backend di PM2..." -ForegroundColor Yellow
     Push-Location backend
-    & pm2 start src/server.js --name "mustahiq-backend" --cwd "backend"
+    & pm2 start src/server.js --name "mustahiq-backend" --cwd "$PSScriptRoot\backend"
     Pop-Location
 
     Write-Host "Memulai server frontend (Vite Preview) di PM2..." -ForegroundColor Yellow
     Push-Location frontend
-    & pm2 start npm.cmd --name "mustahiq-frontend" --cwd "frontend" -- run preview -- --port $frontendPort --host 0.0.0.0
+    & pm2 start npm.cmd --name "mustahiq-frontend" --cwd "$PSScriptRoot\frontend" -- run preview -- --port $frontendPort --host 0.0.0.0
     Pop-Location
 
     & pm2 save
