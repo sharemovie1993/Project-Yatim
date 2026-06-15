@@ -177,4 +177,61 @@ router.post('/tunnel/toggle', verifyToken, requireAdmin, async (req, res) => {
   }
 });
 
+// POST /api/v1/license/tunnel/reset
+router.post('/tunnel/reset', verifyToken, requireAdmin, async (req, res) => {
+  try {
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    // 1. Stop the tunnel service first
+    try {
+      await WireguardManager.stopTunnel();
+    } catch (e) {
+      console.warn('[Tunnel Reset] Failed to stop tunnel service:', e.message);
+    }
+
+    // 2. Delete the config file if exists
+    const confPath = WireguardManager.getConfPath();
+    const fs = require('fs');
+    if (fs.existsSync(confPath)) {
+      try {
+        fs.unlinkSync(confPath);
+      } catch (e) {
+        console.warn('[Tunnel Reset] Failed to delete config file:', e.message);
+      }
+    }
+
+    // 3. Clear settings from tenant database
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (tenant) {
+      let settings = {};
+      try {
+        settings = JSON.parse(tenant.settings || '{}');
+      } catch (e) {
+        settings = {};
+      }
+      
+      delete settings.vpn_license_key;
+      delete settings.tunnel_subdomain;
+      
+      await prisma.tenant.update({
+        where: { id: tenantId },
+        data: {
+          settings: JSON.stringify(settings)
+        }
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Konfigurasi VPN Tunneling berhasil di-reset sampai bersih.'
+    });
+  } catch (error) {
+    console.error('[Tunnel Reset Route Error]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;

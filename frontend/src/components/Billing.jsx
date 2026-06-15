@@ -241,6 +241,28 @@ export default function Billing() {
     }
   };
 
+  const handleResetTunnel = async () => {
+    const confirmed = await showConfirm(
+      "Apakah Anda yakin ingin menghapus seluruh konfigurasi tunneling dan lisensi VPN ini?\n\n" +
+      "Aksi ini akan mematikan koneksi VPN, menghapus file WireGuard, dan mengosongkan lisensi VPN di database."
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await ApiService.resetTunnel();
+      if (res.success) {
+        await showAlert('Konfigurasi dan lisensi VPN berhasil di-reset sampai bersih.');
+        setVpnLicenseKey('');
+        await loadData();
+        await loadTunnelStatus();
+      } else {
+        await showAlert(res.error || 'Gagal mereset konfigurasi.');
+      }
+    } catch (err) {
+      await showAlert('Gagal mereset konfigurasi: ' + err.message);
+    }
+  };
+
   const loadPackages = async (prodId) => {
     try {
       const pkgRes = await fetch(`${LICENSE_SERVER_URL}/api/license/packages?product_id=${prodId}`);
@@ -827,6 +849,25 @@ export default function Billing() {
               </div>
             )}
             
+            {tunnelStatus.status !== 'not_configured' && (
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ 
+                  ...styles.syncBtn, 
+                  marginTop: '12px', 
+                  borderColor: isPublicConnection ? 'rgba(156, 163, 175, 0.2)' : 'rgba(239, 68, 68, 0.4)', 
+                  color: isPublicConnection ? 'hsl(var(--muted-foreground))' : '#ef4444',
+                  cursor: isPublicConnection ? 'not-allowed' : 'pointer'
+                }}
+                onClick={handleResetTunnel}
+                disabled={togglingTunnel || requestingTunnel || isPublicConnection}
+                title={isPublicConnection ? 'Tidak dapat melepaskan/mereset konfigurasi tunnel dari jalur publik' : ''}
+              >
+                🗑️ Reset & Hapus Konfigurasi Tunneling
+              </button>
+            )}
+
             {tunnelStatus.status !== 'not_configured' && (
               <p style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', marginTop: '10px', textAlign: 'center' }}>
                 {isPublicConnection && tunnelStatus.status === 'connected' ? (

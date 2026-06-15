@@ -270,6 +270,12 @@ class ApiService {
     });
   }
 
+  static async resetTunnel() {
+    return this.request('/v1/license/tunnel/reset', {
+      method: 'POST'
+    });
+  }
+
   // User Management
   static async getUsers() {
     return this.request('/v1/users');
