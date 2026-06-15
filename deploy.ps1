@@ -177,19 +177,19 @@ $backendEnvContent = @"
 PORT=$backendPort
 DATABASE_URL="file:./dev.db"
 "@
-$backendEnvContent | Out-File -FilePath "backend/.env" -Encoding utf8 -Force
+[System.IO.File]::WriteAllText("backend/.env", $backendEnvContent)
 
 # Root .env (Lisensi)
 $rootEnvContent = @"
 EXPO_PUBLIC_LICENSE_SERVER_URL=$licenseUrl
 "@
-$rootEnvContent | Out-File -FilePath ".env" -Encoding utf8 -Force
+[System.IO.File]::WriteAllText(".env", $rootEnvContent)
 
 # frontend/.env
 $frontendEnvContent = @"
 VITE_BACKEND_PORT=$backendPort
 "@
-$frontendEnvContent | Out-File -FilePath "frontend/.env" -Encoding utf8 -Force
+[System.IO.File]::WriteAllText("frontend/.env", $frontendEnvContent)
 
 Write-Host "File konfigurasi berhasil dibuat!" -ForegroundColor Green
 Write-Host ""
