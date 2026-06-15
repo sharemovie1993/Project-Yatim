@@ -294,6 +294,21 @@ class ApiService {
       method: 'DELETE'
     });
   }
+
+  // System Update
+  static async checkUpdate() {
+    return this.request('/v1/system/update/check');
+  }
+
+  static async getUpdateStatus() {
+    return this.request('/v1/system/update/status');
+  }
+
+  static async executeUpdate() {
+    return this.request('/v1/system/update/execute', {
+      method: 'POST'
+    });
+  }
 }
 
 export default ApiService;

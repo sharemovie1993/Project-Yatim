@@ -11,6 +11,7 @@ const licenseRouter = require('./routes/license');
 const tenantRouter = require('./routes/tenant');
 const authRouter = require('./routes/auth');
 const usersRouter = require('./routes/users');
+const systemRouter = require('./routes/system');
 const verifyToken = require('./middlewares/auth');
 
 const app = express();
@@ -38,6 +39,7 @@ app.use('/api/v1/program', programRouter);
 app.use('/api/v1/license', licenseRouter);
 app.use('/api/v1/tenant', tenantRouter);
 app.use('/api/v1/users', verifyToken, usersRouter);
+app.use('/api/v1/system', systemRouter);
 
 // Start Server
 app.listen(PORT, () => {

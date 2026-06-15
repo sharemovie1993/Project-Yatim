@@ -8,6 +8,7 @@ import Program from './components/Program';
 import Profile from './components/Profile';
 import Billing from './components/Billing';
 import Users from './components/Users';
+import Update from './components/Update';
 import ApiService from './services/api';
 
 const getLoggedInUserRole = () => {
@@ -85,6 +86,8 @@ export default function App() {
         return userRole === 'ADMIN' ? <Billing /> : <Dashboard onNavigate={setCurrentPage} />;
       case 'users':
         return userRole === 'ADMIN' ? <Users /> : <Dashboard onNavigate={setCurrentPage} />;
+      case 'update':
+        return userRole === 'ADMIN' ? <Update /> : <Dashboard onNavigate={setCurrentPage} />;
       default:
         return <Dashboard onNavigate={setCurrentPage} />;
     }
@@ -144,6 +147,12 @@ export default function App() {
                 onClick={() => setCurrentPage('users')}
               >
                 🔑 Manajemen Pengguna
+              </div>
+              <div 
+                style={styles.navItem(currentPage === 'update')} 
+                onClick={() => setCurrentPage('update')}
+              >
+                🔄 Pembaruan Aplikasi
               </div>
             </>
           )}
