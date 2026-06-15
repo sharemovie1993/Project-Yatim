@@ -175,31 +175,46 @@ export default function Billing() {
     }
   };
 
-  const handleRequestTunnel = async () => {
-    if (!tenant?.license_key) {
-      await showAlert('Harap aktifkan/masukkan kunci lisensi terlebih dahulu.');
-      return;
+  const triggerTunnelProvisioning = async (slug, bypassConfirm = false) => {
+    if (!bypassConfirm) {
+      const confirmed = await showConfirm(
+        `Apakah Anda yakin ingin mengaktifkan Online Gateway dengan subdomain http://${slug}.absenta.id?`
+      );
+      if (!confirmed) return;
     }
-    const slug = tenant.domain_or_slug;
-    const confirmed = await showConfirm(
-      `Apakah Anda yakin ingin mengaktifkan Online Gateway dengan subdomain http://${slug}.absenta.id?`
-    );
-    if (!confirmed) return;
 
     setRequestingTunnel(true);
     try {
       const res = await ApiService.requestTunnel(slug);
       if (res.success) {
-        await showAlert('Konfigurasi VPN Tunnel berhasil dibuat. Anda sekarang dapat mengaktifkan koneksi.');
+        // Automatically start the tunnel connection
+        const startRes = await ApiService.toggleTunnel('start');
+        if (startRes.success) {
+          await showAlert('Online Gateway (VPN Tunnel) berhasil diaktifkan secara otomatis!');
+        } else {
+          await showAlert('Konfigurasi VPN Tunnel berhasil dibuat, namun gagal mengaktifkan koneksi secara otomatis: ' + startRes.error);
+        }
         await loadTunnelStatus();
       } else {
         await showAlert(res.error || 'Gagal merequest konfigurasi tunnel.');
       }
     } catch (err) {
-      await showAlert('Gagal merequest konfigurasi: ' + err.message);
+      await showAlert('Gagal mengaktifkan gateway otomatis: ' + err.message);
     } finally {
       setRequestingTunnel(false);
     }
+  };
+
+  const handleRequestTunnel = async () => {
+    if (!vpnLicenseKey) {
+      await showAlert('Harap masukkan/simpan kunci lisensi VPN terlebih dahulu.');
+      return;
+    }
+    if (!tenant?.domain_or_slug) {
+      await showAlert('Subdomain sekolah belum dikonfigurasi.');
+      return;
+    }
+    await triggerTunnelProvisioning(tenant.domain_or_slug, false);
   };
 
   const handleToggleTunnel = async (action) => {
@@ -491,8 +506,19 @@ export default function Billing() {
           localStorage.removeItem('@license_pending_invoice');
           setPendingKey('');
           setPaymentDetails(null);
-          await showAlert(isVpnProduct ? 'Pembayaran Berhasil! Lisensi VPN Anda telah aktif.' : 'Pembayaran Berhasil! Lisensi Anda telah aktif.');
-          await loadData();
+          
+          if (isVpnProduct) {
+            await loadData();
+            const slug = licenseDetails.requested_slug || tenant?.domain_or_slug;
+            if (slug) {
+              await triggerTunnelProvisioning(slug, true);
+            } else {
+              await showAlert('Pembayaran Berhasil! Lisensi VPN Anda telah aktif. Silakan aktifkan Online Gateway di panel kiri.');
+            }
+          } else {
+            await showAlert('Pembayaran Berhasil! Lisensi Anda telah aktif.');
+            await loadData();
+          }
         } else {
           if (invoiceData) {
             setPaymentDetails(invoiceData);
