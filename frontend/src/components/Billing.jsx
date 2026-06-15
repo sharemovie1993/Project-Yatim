@@ -130,6 +130,10 @@ export default function Billing() {
   const [loadingTunnel, setLoadingTunnel] = useState(false);
   const [togglingTunnel, setTogglingTunnel] = useState(false);
   const [requestingTunnel, setRequestingTunnel] = useState(false);
+  const [historyLicenses, setHistoryLicenses] = useState([]);
+  const [historyInvoices, setHistoryInvoices] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [historyTab, setHistoryTab] = useState('licenses');
 
   const showAlert = (message) => {
     return new Promise((resolve) => {
@@ -278,12 +282,30 @@ export default function Billing() {
     }
   };
 
+  const loadHistory = async (coreKey) => {
+    if (!coreKey) return;
+    setLoadingHistory(true);
+    try {
+      const res = await fetch(`${LICENSE_SERVER_URL}/api/license/history-by-core-key/${coreKey}`);
+      const result = await res.json();
+      if (result.success) {
+        setHistoryLicenses(result.data.licenses || []);
+        setHistoryInvoices(result.data.invoices || []);
+      }
+    } catch (err) {
+      console.error('Failed to load transaction history:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
   const loadData = async () => {
     try {
       const profile = await ApiService.getTenantProfile();
       setTenant(profile.data);
       if (profile.data?.license_key) {
         setLicenseKey(profile.data.license_key);
+        loadHistory(profile.data.license_key);
       }
       if (profile.data?.settings?.vpn_license_key) {
         setVpnLicenseKey(profile.data.settings.vpn_license_key);
@@ -880,6 +902,148 @@ export default function Billing() {
               </p>
             )}
           </div>
+
+          {/* RIWAYAT TRANSAKSI & LISENSI INSTANSI */}
+          {licenseKey && (
+            <div className="card" style={styles.card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <h3 style={styles.cardTitle}>Riwayat Transaksi & Lisensi</h3>
+                <button 
+                  type="button"
+                  className="btn btn-outline" 
+                  style={{ padding: '2px 8px', fontSize: '11px', height: '24px' }} 
+                  onClick={() => loadHistory(licenseKey)}
+                  disabled={loadingHistory}
+                >
+                  {loadingHistory ? '🔄 Loading...' : '🔄 Refresh'}
+                </button>
+              </div>
+              <p style={styles.cardDesc}>Daftar semua lisensi dan tagihan pembayaran yang terdaftar untuk subdomain Anda.</p>
+
+              {/* Tabs */}
+              <div style={styles.tabContainer}>
+                <button
+                  type="button"
+                  style={styles.tabButton(historyTab === 'licenses')}
+                  onClick={() => setHistoryTab('licenses')}
+                >
+                  🔑 Lisensi ({historyLicenses.length})
+                </button>
+                <button
+                  type="button"
+                  style={styles.tabButton(historyTab === 'invoices')}
+                  onClick={() => setHistoryTab('invoices')}
+                >
+                  🧾 Invoice ({historyInvoices.length})
+                </button>
+              </div>
+
+              {historyTab === 'licenses' ? (
+                <div>
+                  {historyLicenses.length === 0 ? (
+                    <p style={styles.noHistoryText}>Tidak ada riwayat lisensi.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {historyLicenses.map((lic) => {
+                        const isVpn = lic.product_id === 'vpn-tunnel';
+                        const isActive = lic.is_active === 1 && lic.status === 'active';
+                        return (
+                          <div key={lic.id} style={styles.historyItem}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <div>
+                                <strong style={{ fontSize: '13px', color: 'hsl(var(--foreground))' }}>
+                                  {lic.product_display_name || lic.product_id}
+                                </strong>
+                                <p style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', margin: '2px 0 0 0' }}>
+                                  Key: <code style={styles.keyCode}>{lic.license_key}</code>
+                                </p>
+                              </div>
+                              <span style={styles.historyStatusBadge(isActive, lic.status)}>
+                                {lic.status.toUpperCase()}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '11.5px', color: 'hsl(var(--muted-foreground))' }}>
+                              <span>Berlaku hingga: {lic.expires_at}</span>
+                              <div style={{ display: 'flex', gap: '6px' }}>
+                                <button
+                                  type="button"
+                                  className="btn btn-outline"
+                                  style={{ padding: '2px 6px', fontSize: '10px', height: '20px' }}
+                                  onClick={async () => {
+                                    navigator.clipboard.writeText(lic.license_key);
+                                    await showAlert('Kunci lisensi disalin!');
+                                  }}
+                                >
+                                  Salin
+                                </button>
+                                {isVpn && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-accent"
+                                    style={{ padding: '2px 6px', fontSize: '10px', height: '20px', color: 'white' }}
+                                    onClick={async () => {
+                                      setVpnLicenseKey(lic.license_key);
+                                      await ApiService.updateTenantProfile(null, { vpn_license_key: lic.license_key });
+                                      await showAlert('Lisensi VPN berhasil diterapkan ke konfigurasi Anda!');
+                                      await loadData();
+                                    }}
+                                  >
+                                    Gunakan
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div>
+                  {historyInvoices.length === 0 ? (
+                    <p style={styles.noHistoryText}>Tidak ada riwayat invoice.</p>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      {historyInvoices.map((inv) => {
+                        const isPaid = inv.status === 'paid';
+                        return (
+                          <div key={inv.id} style={styles.historyItem}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <div>
+                                <strong style={{ fontSize: '13px', color: 'hsl(var(--foreground))' }}>
+                                  {inv.invoice_number}
+                                </strong>
+                                <p style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', margin: '2px 0 0 0' }}>
+                                  {inv.product_display_name || inv.product_id} ({inv.payment_method || 'Manual'})
+                                </p>
+                              </div>
+                              <span style={styles.invoiceStatusBadge(isPaid)}>
+                                {inv.status.toUpperCase()}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px', fontSize: '11.5px' }}>
+                              <strong style={{ color: 'hsl(var(--primary))' }}>
+                                {formatPrice(inv.amount)}
+                              </strong>
+                              <button
+                                type="button"
+                                className="btn btn-outline"
+                                style={{ padding: '2px 6px', fontSize: '10px', height: '20px' }}
+                                onClick={() => handlePrintInvoice(inv, isPaid)}
+                              >
+                                🖨️ Cetak
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="card" style={styles.card}>
             <h3 style={styles.cardTitle}>Informasi Aplikasi</h3>
@@ -1679,4 +1843,67 @@ const styles = {
     borderRadius: '20px',
     letterSpacing: '0.5px',
   },
+  tabContainer: {
+    display: 'flex',
+    gap: '8px',
+    marginBottom: '16px',
+    backgroundColor: 'rgba(0,0,0,0.02)',
+    padding: '4px',
+    borderRadius: '8px',
+    border: '1px solid hsl(var(--border))'
+  },
+  tabButton: (isActive) => ({
+    flex: 1,
+    padding: '6px 12px',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: 'bold',
+    backgroundColor: isActive ? 'hsl(var(--background))' : 'transparent',
+    color: isActive ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))',
+    border: isActive ? '1px solid hsl(var(--border))' : 'none',
+    boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.05)' : 'none',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  }),
+  noHistoryText: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+    textAlign: 'center',
+    padding: '16px 0'
+  },
+  historyItem: {
+    border: '1px solid hsl(var(--border))',
+    borderRadius: '8px',
+    padding: '12px',
+    backgroundColor: 'hsl(var(--card))',
+    marginBottom: '8px'
+  },
+  keyCode: {
+    fontFamily: 'monospace',
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    padding: '2px 4px',
+    borderRadius: '4px',
+    fontSize: '11px'
+  },
+  historyStatusBadge: (isActive, status) => {
+    const isPending = status === 'pending';
+    return {
+      fontSize: '10px',
+      fontWeight: 'bold',
+      padding: '2px 8px',
+      borderRadius: '12px',
+      backgroundColor: isActive ? 'rgba(16, 185, 129, 0.12)' : (isPending ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)'),
+      color: isActive ? '#10b981' : (isPending ? '#f59e0b' : '#ef4444'),
+      border: '1px solid ' + (isActive ? 'rgba(16, 185, 129, 0.3)' : (isPending ? 'rgba(245, 158, 11, 0.3)' : 'rgba(239, 68, 68, 0.3)'))
+    };
+  },
+  invoiceStatusBadge: (isPaid) => ({
+    fontSize: '10px',
+    fontWeight: 'bold',
+    padding: '2px 8px',
+    borderRadius: '12px',
+    backgroundColor: isPaid ? 'rgba(16, 185, 129, 0.12)' : 'rgba(245, 158, 11, 0.12)',
+    color: isPaid ? '#10b981' : '#f59e0b',
+    border: '1px solid ' + (isPaid ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)')
+  }),
 };
