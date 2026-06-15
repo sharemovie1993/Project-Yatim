@@ -1,0 +1,245 @@
+const express = require('express');
+const router = express.Router();
+const prisma = require('../prisma');
+const PdfGenerator = require('../services/pdfGenerator');
+
+const getTenantId = (req) => {
+  return req.headers['x-tenant-id'] || req.query.tenant_id;
+};
+
+// ==========================================
+// PROGRAM SANTUNAN ENDPOINTS
+// ==========================================
+
+// GET /api/v1/program
+router.get('/', async (req, res) => {
+  try {
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    const data = await prisma.programSantunan.findMany({
+      where: { tenant_id: tenantId },
+      orderBy: { tanggal_pelaksanaan: 'desc' }
+    });
+    
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('[GET Program Error]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/v1/program
+router.post('/', async (req, res) => {
+  try {
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    const { nama_program, tanggal_pelaksanaan, jenis, total_anggaran, status } = req.body;
+    const data = await prisma.programSantunan.create({
+      data: {
+        tenant_id: tenantId,
+        nama_program,
+        tanggal_pelaksanaan,
+        jenis,
+        total_anggaran: total_anggaran ? parseFloat(total_anggaran) : 0.0,
+        status: status || 'DRAFT'
+      }
+    });
+
+    res.status(201).json({ success: true, data });
+  } catch (error) {
+    console.error('[POST Program Error]', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// PUT /api/v1/program/:id
+router.put('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nama_program, tanggal_pelaksanaan, jenis, total_anggaran, status } = req.body;
+
+    const data = await prisma.programSantunan.update({
+      where: { id },
+      data: {
+        nama_program,
+        tanggal_pelaksanaan,
+        jenis,
+        total_anggaran: total_anggaran ? parseFloat(total_anggaran) : undefined,
+        status
+      }
+    });
+
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('[PUT Program Error]', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/v1/program/:id
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await prisma.programSantunan.delete({
+      where: { id }
+    });
+
+    res.json({ success: true, message: 'Program deleted successfully.' });
+  } catch (error) {
+    console.error('[DELETE Program Error]', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// ==========================================
+// PENYALURAN SANTUNAN ENDPOINTS
+// ==========================================
+
+// GET /api/v1/program/:programId/penyaluran
+router.get('/:programId/penyaluran', async (req, res) => {
+  try {
+    const { programId } = req.params;
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    const data = await prisma.penyaluranSantunan.findMany({
+      where: {
+        program_id: programId,
+        tenant_id: tenantId
+      },
+      include: {
+        mustahiq: true,
+        kelompok: true
+      }
+    });
+    
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('[GET Penyaluran Error]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/v1/program/:programId/penyaluran/generate-kelompok
+router.post('/:programId/penyaluran/generate-kelompok', async (req, res) => {
+  try {
+    const { programId } = req.params;
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    const { kelompokId, jumlahDiterima } = req.body;
+    if (!kelompokId || !jumlahDiterima) {
+      return res.status(400).json({ success: false, error: 'kelompokId and jumlahDiterima are required.' });
+    }
+
+    // 1. Get all active mustahiqs in the group
+    const anggotaData = await prisma.anggotaKelompok.findMany({
+      where: {
+        kelompok_id: kelompokId,
+        tenant_id: tenantId
+      },
+      include: {
+        mustahiq: true
+      }
+    });
+    
+    const mustahiqs = (anggotaData || []).map(row => row.mustahiq).filter(Boolean);
+    if (mustahiqs.length === 0) {
+      return res.status(400).json({ success: false, error: 'Kelompok tidak memiliki anggota.' });
+    }
+
+    // 2. Map into distribution records
+    const payloads = mustahiqs.map(m => ({
+      tenant_id: tenantId,
+      program_id: programId,
+      mustahiq_id: m.id,
+      kelompok_id: kelompokId,
+      jumlah_diterima: jumlahDiterima,
+      status: 'BELUM'
+    }));
+
+    // 3. Upsert records one by one for cross-database (SQLite & PostgreSQL) compatibility
+    let count = 0;
+    for (const p of payloads) {
+      await prisma.penyaluranSantunan.upsert({
+        where: {
+          program_id_mustahiq_id: {
+            program_id: p.program_id,
+            mustahiq_id: p.mustahiq_id
+          }
+        },
+        update: {}, // Do nothing if it already exists
+        create: p
+      });
+      count++;
+    }
+    
+    res.json({ success: true, count });
+  } catch (error) {
+    console.error('[POST Generate Penyaluran Error]', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// PUT /api/v1/program/penyaluran/:penyaluranId
+router.put('/penyaluran/:penyaluranId', async (req, res) => {
+  try {
+    const { penyaluranId } = req.params;
+    const { status, buktiUrl, petugasId } = req.body;
+
+    if (!['BELUM', 'TERSALURKAN', 'BATAL'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'Invalid status value.' });
+    }
+
+    const data = await prisma.penyaluranSantunan.update({
+      where: { id: penyaluranId },
+      data: {
+        status,
+        tanggal_penyerahan: status === 'TERSALURKAN' ? new Date() : null,
+        bukti_penyerahan_url: buktiUrl !== undefined ? buktiUrl : undefined,
+        petugas_id: petugasId !== undefined ? petugasId : undefined
+      }
+    });
+    
+    res.json({ success: true, data });
+  } catch (error) {
+    console.error('[PUT Update Status Penyaluran Error]', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/v1/program/:programId/spj-pdf
+router.get('/:programId/spj-pdf', async (req, res) => {
+  try {
+    const { programId } = req.params;
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=SPJ-${programId}.pdf`);
+
+    await PdfGenerator.generateSpjPdf(programId, tenantId, res);
+  } catch (error) {
+    console.error('[SPJ PDF Generation Route Error]', error);
+    // If headers are already sent, we just end response, otherwise send json
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+});
+
+module.exports = router;
+

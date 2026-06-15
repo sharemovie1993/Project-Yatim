@@ -1,0 +1,27 @@
+{
+  "name": "mustahiq-api",
+  "version": "1.0.0",
+  "description": "Centralized REST API Backend Server for Mustahiq Care Application",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "@supabase/supabase-js": "^2.39.8",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.1.1",
+    "node-fetch": "^2.7.0",
+    "pdfkit": "^0.19.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0",
+    "prisma": "^5.22.0"
+  },
+  "private": true
+}

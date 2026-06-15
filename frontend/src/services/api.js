@@ -1,0 +1,299 @@
+const getBaseUrl = () => {
+  const { protocol, hostname, origin } = window.location;
+  if (hostname.endsWith('.absenta.id') || hostname === 'absenta.id') {
+    return `${origin}/api`;
+  }
+  const port = import.meta.env.VITE_BACKEND_PORT || '5002';
+  return `${protocol}//${hostname}:${port}/api`;
+};
+
+const BASE_URL = getBaseUrl();
+
+class ApiService {
+  static getToken() {
+    return localStorage.getItem('@mustahiq_jwt_token');
+  }
+
+  static getTenantId() {
+    return localStorage.getItem('@mustahiq_tenant_id');
+  }
+
+  static async request(path, options = {}) {
+    const token = this.getToken();
+    const tenantId = this.getTenantId();
+
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    if (tenantId) {
+      headers['x-tenant-id'] = tenantId;
+    }
+
+    const response = await fetch(`${BASE_URL}${path}`, {
+      ...options,
+      headers,
+    });
+
+    // Handle unauthorized responses automatically
+    if (response.status === 401 || response.status === 403) {
+      console.warn('[API Client] Unauthorized request. Wiping token & redirecting to login...');
+      localStorage.removeItem('@mustahiq_jwt_token');
+      localStorage.removeItem('@mustahiq_tenant_id');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Terjadi kesalahan sistem.');
+    }
+
+    return data;
+  }
+
+  // Auth
+  static async login(email, password) {
+    const res = await this.request('/v1/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    if (res.success && res.token) {
+      localStorage.setItem('@mustahiq_jwt_token', res.token);
+      localStorage.setItem('@mustahiq_tenant_id', res.user.tenant_id);
+    }
+    return res;
+  }
+
+  static async register(payload) {
+    return this.request('/v1/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  static logout() {
+    localStorage.removeItem('@mustahiq_jwt_token');
+    localStorage.removeItem('@mustahiq_tenant_id');
+    window.location.href = '/login';
+  }
+
+  // Mustahiq CRUD
+  static async getMustahiq(activeOnly = false) {
+    return this.request(`/v1/mustahiq?activeOnly=${activeOnly}`);
+  }
+
+  static async addMustahiq(data) {
+    return this.request('/v1/mustahiq', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  static async updateMustahiq(id, updates) {
+    return this.request(`/v1/mustahiq/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  static async deleteMustahiq(id) {
+    return this.request(`/v1/mustahiq/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Excel Bulk Import & Export URLs
+  static getExportExcelUrl() {
+    const tenantId = this.getTenantId();
+    return `${BASE_URL}/v1/mustahiq/export?tenant_id=${tenantId}`;
+  }
+
+  static async importExcel(fileBufferOrBlob) {
+    const token = this.getToken();
+    const tenantId = this.getTenantId();
+    const formData = new FormData();
+    formData.append('file', fileBufferOrBlob);
+
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (tenantId) headers['x-tenant-id'] = tenantId;
+
+    const response = await fetch(`${BASE_URL}/v1/mustahiq/import-excel`, {
+      method: 'POST',
+      headers,
+      body: formData
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Import Excel gagal.');
+    return data;
+  }
+
+  // Kategori CRUD
+  static async getKategori() {
+    return this.request('/v1/kategori');
+  }
+
+  static async addKategori(nama_kategori, keterangan) {
+    return this.request('/v1/kategori', {
+      method: 'POST',
+      body: JSON.stringify({ nama_kategori, keterangan }),
+    });
+  }
+
+  static async updateKategori(id, data) {
+    return this.request(`/v1/kategori/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  static async deleteKategori(id) {
+    return this.request(`/v1/kategori/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Kelompok CRUD & Anggota
+  static async getKelompok() {
+    return this.request('/v1/kelompok');
+  }
+
+  static async addKelompok(nama_kelompok, keterangan, wilayah) {
+    return this.request('/v1/kelompok', {
+      method: 'POST',
+      body: JSON.stringify({ nama_kelompok, keterangan, wilayah }),
+    });
+  }
+
+  static async getAnggotaKelompok(kelompokId) {
+    return this.request(`/v1/kelompok/${kelompokId}/anggota`);
+  }
+
+  static async addAnggotaKelompok(kelompokId, mustahiqIds) {
+    return this.request(`/v1/kelompok/${kelompokId}/anggota`, {
+      method: 'POST',
+      body: JSON.stringify({ mustahiqIds }),
+    });
+  }
+
+  static async deleteAnggotaKelompok(kelompokId, mustahiqId) {
+    return this.request(`/v1/kelompok/${kelompokId}/anggota/${mustahiqId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Program & Penyaluran CRUD
+  static async getProgram() {
+    return this.request('/v1/program');
+  }
+
+  static async addProgram(data) {
+    return this.request('/v1/program', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  static async updateProgram(id, data) {
+    return this.request(`/v1/program/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  static async getPenyaluran(programId) {
+    return this.request(`/v1/program/${programId}/penyaluran`);
+  }
+
+  static async generatePenyaluranUntukKelompok(programId, kelompokId, jumlahDiterima) {
+    return this.request(`/v1/program/${programId}/penyaluran/generate-kelompok`, {
+      method: 'POST',
+      body: JSON.stringify({ kelompokId, jumlahDiterima }),
+    });
+  }
+
+  static async updateStatusPenyaluran(penyaluranId, status, details = {}) {
+    return this.request(`/v1/program/penyaluran/${penyaluranId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, ...details }),
+    });
+  }
+
+  // SPJ PDF Download URL
+  static getSpjPdfUrl(programId) {
+    const tenantId = this.getTenantId();
+    return `${BASE_URL}/v1/program/${programId}/spj-pdf?tenant_id=${tenantId}`;
+  }
+
+  // Tenant / School Profile
+  static async getTenantProfile() {
+    return this.request('/v1/tenant/profile');
+  }
+
+  static async updateTenantProfile(name, settings) {
+    return this.request('/v1/tenant/profile', {
+      method: 'PUT',
+      body: JSON.stringify({ name, settings }),
+    });
+  }
+
+  // License Sync
+  static async syncLicense() {
+    return this.request('/v1/license/sync', {
+      method: 'POST'
+    });
+  }
+
+  // Tunnel / VPN Online Gateway
+  static async getTunnelStatus() {
+    return this.request('/v1/license/tunnel/status');
+  }
+
+  static async requestTunnel(subdomainSlug) {
+    return this.request('/v1/license/tunnel/request', {
+      method: 'POST',
+      body: JSON.stringify({ subdomain_slug: subdomainSlug })
+    });
+  }
+
+  static async toggleTunnel(action) {
+    return this.request('/v1/license/tunnel/toggle', {
+      method: 'POST',
+      body: JSON.stringify({ action })
+    });
+  }
+
+  // User Management
+  static async getUsers() {
+    return this.request('/v1/users');
+  }
+
+  static async createUser(payload) {
+    return this.request('/v1/users', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  static async updateUser(id, payload) {
+    return this.request(`/v1/users/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload)
+    });
+  }
+
+  static async deleteUser(id) {
+    return this.request(`/v1/users/${id}`, {
+      method: 'DELETE'
+    });
+  }
+}
+
+export default ApiService;

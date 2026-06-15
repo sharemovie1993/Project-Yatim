@@ -1,0 +1,142 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Tenant {
+  id             String               @id @default(uuid())
+  name           String
+  domain_or_slug String               @unique
+  license_key    String?              @unique
+  is_active      Boolean              @default(true)
+  settings       String               @default("{}")
+  created_at     DateTime             @default(now())
+  mustahiq       Mustahiq[]
+  kelompok       Kelompok[]
+  anggota        AnggotaKelompok[]
+  program        ProgramSantunan[]
+  penyaluran     PenyaluranSantunan[]
+  users          User[]
+
+  @@map("tenants")
+}
+
+model Mustahiq {
+  id             String               @id @default(uuid())
+  tenant_id      String
+  nik            String?
+  nama_lengkap   String
+  kategori       String
+  jenis_kelamin  String?
+  tanggal_lahir  String?
+  alamat_lengkap String
+  no_telepon     String?
+  nama_wali      String?
+  orang_tua_asuh String?
+  status         String               @default("SURVEY")
+  catatan        String?
+  created_at     DateTime             @default(now())
+  
+  tenant         Tenant               @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  anggota        AnggotaKelompok[]
+  penyaluran     PenyaluranSantunan[]
+
+  @@unique([tenant_id, nik])
+  @@map("mustahiq")
+}
+
+model Kelompok {
+  id             String               @id @default(uuid())
+  tenant_id      String
+  nama_kelompok  String
+  keterangan     String?
+  wilayah        String?
+  created_at     DateTime             @default(now())
+
+  tenant         Tenant               @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  anggota        AnggotaKelompok[]
+  penyaluran     PenyaluranSantunan[]
+
+  @@map("kelompok")
+}
+
+model AnggotaKelompok {
+  id                String            @id @default(uuid())
+  tenant_id         String
+  kelompok_id       String
+  mustahiq_id       String
+  tanggal_bergabung DateTime          @default(now())
+
+  tenant            Tenant            @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  kelompok          Kelompok          @relation(fields: [kelompok_id], references: [id], onDelete: Cascade)
+  mustahiq          Mustahiq          @relation(fields: [mustahiq_id], references: [id], onDelete: Cascade)
+
+  @@unique([kelompok_id, mustahiq_id])
+  @@map("anggota_kelompok")
+}
+
+model ProgramSantunan {
+  id                  String             @id @default(uuid())
+  tenant_id           String
+  nama_program        String
+  tanggal_pelaksanaan String
+  jenis               String
+  total_anggaran      Float              @default(0.0)
+  status              String             @default("DRAFT")
+  created_at          DateTime           @default(now())
+
+  tenant              Tenant             @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  penyaluran          PenyaluranSantunan[]
+
+  @@map("program_santunan")
+}
+
+model PenyaluranSantunan {
+  id                   String            @id @default(uuid())
+  tenant_id            String
+  program_id           String
+  mustahiq_id          String
+  kelompok_id          String?
+  jumlah_diterima      String
+  status               String            @default("BELUM")
+  tanggal_penyerahan   DateTime?
+  bukti_penyerahan_url String?
+  petugas_id           String?
+  created_at           DateTime          @default(now())
+
+  tenant               Tenant            @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+  program              ProgramSantunan   @relation(fields: [program_id], references: [id], onDelete: Cascade)
+  mustahiq             Mustahiq          @relation(fields: [mustahiq_id], references: [id], onDelete: Cascade)
+  kelompok             Kelompok?         @relation(fields: [kelompok_id], references: [id], onDelete: SetNull)
+
+  @@unique([program_id, mustahiq_id])
+  @@map("penyaluran_santunan")
+}
+
+model Kategori {
+  id             String               @id @default(uuid())
+  tenant_id      String
+  nama_kategori  String
+  keterangan     String?
+  created_at     DateTime             @default(now())
+
+  @@map("kategori")
+}
+
+model User {
+  id         String   @id @default(uuid())
+  tenant_id  String
+  email      String   @unique
+  password   String
+  name       String
+  role       String   @default("STAFF")
+  created_at DateTime @default(now())
+
+  tenant     Tenant   @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
+
+  @@map("users")
+}
