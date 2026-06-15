@@ -154,12 +154,12 @@ while true; do
 
             echo -e "\n${YELLOW}Memulai server backend...${NC}"
             cd backend
-            pm2 start src/server.js --name "mustahiq-backend" --cwd "backend"
+            pm2 start src/server.js --name "mustahiq-backend" --cwd "$PWD"
             cd ..
 
             echo -e "\n${YELLOW}Memulai server frontend (Vite Preview)...${NC}"
             cd frontend
-            pm2 start npm --name "mustahiq-frontend" --cwd "frontend" -- run preview -- --port $frontend_port --host 0.0.0.0
+            pm2 start node_modules/vite/bin/vite.js --name "mustahiq-frontend" --cwd "$PWD" -- preview --port $frontend_port --host 0.0.0.0
             cd ..
 
             pm2 save
