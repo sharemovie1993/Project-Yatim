@@ -346,8 +346,13 @@ if ($hasPM2) {
 
 if ($usePM2) {
     Write-Host "Menghentikan layanan Project Yatim yang sudah ada di PM2 (jika ada)..." -ForegroundColor Gray
-    & pm2 delete "mustahiq-backend" 2>$null | Out-Null
-    & pm2 delete "mustahiq-frontend" 2>$null | Out-Null
+    $oldEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & pm2 delete "mustahiq-backend" 2>&1 | Out-Null
+        & pm2 delete "mustahiq-frontend" 2>&1 | Out-Null
+    } catch {}
+    $ErrorActionPreference = $oldEAP
 
     Write-Host "Memulai server backend di PM2..." -ForegroundColor Yellow
     Push-Location backend
