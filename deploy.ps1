@@ -361,7 +361,7 @@ if ($usePM2) {
 
     Write-Host "Memulai server frontend (Vite Preview) di PM2..." -ForegroundColor Yellow
     Push-Location frontend
-    & pm2 start npm --name "mustahiq-frontend" -- run preview -- --port $frontendPort --host 0.0.0.0
+    & pm2 start npm.cmd --name "mustahiq-frontend" -- run preview -- --port $frontendPort --host 0.0.0.0
     Pop-Location
 
     & pm2 save
