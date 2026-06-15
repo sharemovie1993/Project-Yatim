@@ -3,6 +3,12 @@
 
 $ErrorActionPreference = "Stop"
 
+# Mengonfigurasi ExecutionPolicy agar berkas script global npm (seperti PM2) dapat berjalan
+try {
+    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+} catch {}
+
+
 function Show-Header {
     param ($StepTitle)
     Clear-Host
