@@ -142,15 +142,19 @@ class WireguardManager {
           Stop-Service -Name "WireGuardTunnel$supabaselocal_client" -Force -ErrorAction SilentlyContinue
           sc.exe delete "WireGuardTunnel$supabaselocal_client" 2>$null
 
+          # Always remove current service to ensure fresh config is loaded
+          Stop-Service -Name "${SERVICE_NAME}" -Force -ErrorAction SilentlyContinue
+          sc.exe delete "${SERVICE_NAME}" 2>$null
+          Start-Sleep -Seconds 1
+
           $ruleName = 'Mustahiq Care API Gateway Range';
           netsh advfirewall firewall show rule name="$ruleName" 2>$null;
           if ($LASTEXITCODE -ne 0) {
             netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=5000-5200
           }
-          sc.exe query '${SERVICE_NAME}' 2>$null;
-          if ($LASTEXITCODE -ne 0) {
-            Start-Process "${WINDOWS_WG_PATH}" -ArgumentList '/installtunnelservice',"${CONFIG_PATH}" -Wait
-          }
+          
+          # Install fresh tunnel service with latest config
+          Start-Process "${WINDOWS_WG_PATH}" -ArgumentList '/installtunnelservice',"${CONFIG_PATH}" -Wait
           net start '${SERVICE_NAME}'
         `.trim();
 
