@@ -138,6 +138,10 @@ class WireguardManager {
         console.log('[WireguardManager] Node process is not admin. Launching elevated PowerShell script via EncodedCommand...');
         // Pure powershell command, no nested double quote issues
         const psCode = `
+          # Clean up conflicting legacy WireGuard services
+          Stop-Service -Name "WireGuardTunnel$supabaselocal_client" -Force -ErrorAction SilentlyContinue
+          sc.exe delete "WireGuardTunnel$supabaselocal_client" 2>$null
+
           $ruleName = 'Mustahiq Care API Gateway Range';
           netsh advfirewall firewall show rule name="$ruleName" 2>$null;
           if ($LASTEXITCODE -ne 0) {
