@@ -128,7 +128,6 @@ router.post('/tunnel/request', verifyToken, requireAdmin, async (req, res) => {
     fs.writeFileSync(WireguardManager.getConfPath(), config, 'utf8');
 
     // Update settings in local tenant database
-    let settings = JSON.parse(tenant.settings || '{}');
     settings.tunnel_subdomain = subdomain;
     
     await prisma.tenant.update({
