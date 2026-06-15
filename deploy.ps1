@@ -60,6 +60,10 @@ try {
         if ($nodeKey.Character -eq 'y' -or $nodeKey.Character -eq 'Y') {
             Write-Host "Memulai pemasangan Node.js LTS... Mohon tunggu..." -ForegroundColor Cyan
             Start-Process winget -ArgumentList "install OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements" -Wait
+            
+            # Refresh PATH
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+            
             try {
                 $nodeVer = node -v
                 Write-Host "Node.js berhasil terpasang!" -ForegroundColor Green
@@ -85,10 +89,19 @@ try {
     Write-Host "OK ($npmVer)" -ForegroundColor Green
     $hasNpm = $true
 } catch {
-    Write-Host "GAGAL" -ForegroundColor Red
-    Write-Host "Kesalahan: NPM tidak terdeteksi!" -ForegroundColor Red
-    Read-Host "Tekan [ENTER] untuk keluar..."
-    Exit
+    # Try refreshing PATH one more time in case it just got updated
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+    try {
+        $npmVer = npm -v
+        Write-Host "OK ($npmVer)" -ForegroundColor Green
+        $hasNpm = $true
+    } catch {
+        Write-Host "GAGAL" -ForegroundColor Red
+        Write-Host "Kesalahan: NPM tidak terdeteksi!" -ForegroundColor Red
+        Write-Host "Info: Jika Anda baru saja memasang Node.js secara otomatis, silakan TUTUP terminal ini dan BUKA kembali terminal baru, lalu jalankan skrip deploy ini kembali agar sistem dapat membaca PATH Node/NPM baru." -ForegroundColor Yellow
+        Read-Host "Tekan [ENTER] untuk keluar..."
+        Exit
+    }
 }
 
 Write-Host "Memeriksa PM2 (Process Manager)... " -NoNewline
@@ -134,6 +147,10 @@ if ($hasWG) {
         if ($wgKey.Character -eq 'y' -or $wgKey.Character -eq 'Y') {
             Write-Host "Memulai pemasangan WireGuard Client... Mohon tunggu..." -ForegroundColor Cyan
             Start-Process winget -ArgumentList "install WireGuard.WireGuard --silent --accept-package-agreements --accept-source-agreements" -Wait
+            
+            # Refresh PATH
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+            
             if (Test-Path "C:\Program Files\WireGuard\wireguard.exe") {
                 Write-Host "WireGuard Client berhasil terpasang!" -ForegroundColor Green
             } else {
