@@ -106,6 +106,7 @@ while true; do
             # Tulis backend/.env
             echo "PORT=$backend_port" > backend/.env
             echo "DATABASE_URL=\"file:./dev.db\"" >> backend/.env
+            echo "FRONTEND_PORT=$frontend_port" >> backend/.env
 
             # Tulis root .env
             echo "EXPO_PUBLIC_LICENSE_SERVER_URL=$license_url" > .env

@@ -176,6 +176,7 @@ Write-Host "Menulis konfigurasi ke file lingkungan (.env)..." -ForegroundColor C
 $backendEnvContent = @"
 PORT=$backendPort
 DATABASE_URL="file:./dev.db"
+FRONTEND_PORT=$frontendPort
 "@
 [System.IO.File]::WriteAllText("backend/.env", $backendEnvContent)
 

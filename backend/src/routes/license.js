@@ -102,13 +102,15 @@ router.post('/tunnel/request', verifyToken, requireAdmin, async (req, res) => {
     // Call license server to request the tunnel config
     const LICENSE_SERVER_URL = process.env.LICENSE_SERVER_URL || 'https://api.absenta.id';
     const localPort = process.env.PORT || 5002;
+    const frontendPort = process.env.FRONTEND_PORT || 5174;
     const response = await fetch(`${LICENSE_SERVER_URL}/api/license/tunnel/request`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         license_key: tenant.license_key,
         subdomain_slug,
-        local_port: parseInt(localPort)
+        local_port: parseInt(localPort),
+        frontend_port: parseInt(frontendPort)
       })
     });
 
