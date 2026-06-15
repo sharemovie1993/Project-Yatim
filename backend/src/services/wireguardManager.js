@@ -79,7 +79,7 @@ class WireguardManager {
   static setupFirewall() {
     try {
       if (this.isWindows()) {
-        const ruleName = 'Mustahiq Care API Gateway';
+        const ruleName = 'Mustahiq Care API Gateway Range';
         let ruleExists = false;
         try {
           const stdout = execSync(`netsh advfirewall firewall show rule name="${ruleName}"`, { stdio: 'pipe' }).toString();
@@ -91,8 +91,8 @@ class WireguardManager {
         }
 
         if (!ruleExists) {
-          console.log(`[WireguardManager] Creating Windows Firewall rule for ports 5002, 5174...`);
-          execSync(`netsh advfirewall firewall add rule name="${ruleName}" dir=in action=allow protocol=TCP localport=5002,5174`, { stdio: 'pipe' });
+          console.log(`[WireguardManager] Creating Windows Firewall rule for ports 5000-5200...`);
+          execSync(`netsh advfirewall firewall add rule name="${ruleName}" dir=in action=allow protocol=TCP localport=5000-5200`, { stdio: 'pipe' });
         }
       } else {
         // Linux - UFW Check
@@ -138,10 +138,10 @@ class WireguardManager {
         console.log('[WireguardManager] Node process is not admin. Launching elevated PowerShell script via EncodedCommand...');
         // Pure powershell command, no nested double quote issues
         const psCode = `
-          $ruleName = 'Mustahiq Care API Gateway';
+          $ruleName = 'Mustahiq Care API Gateway Range';
           netsh advfirewall firewall show rule name="$ruleName" 2>$null;
           if ($LASTEXITCODE -ne 0) {
-            netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=5002,5174
+            netsh advfirewall firewall add rule name="$ruleName" dir=in action=allow protocol=TCP localport=5000-5200
           }
           sc.exe query '${SERVICE_NAME}' 2>$null;
           if ($LASTEXITCODE -ne 0) {
