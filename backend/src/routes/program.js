@@ -234,7 +234,7 @@ router.get('/:programId/spj-pdf', async (req, res) => {
     }
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=SPJ-${programId}.pdf`);
+    res.setHeader('Content-Disposition', `inline; filename="SPJ-${programId}.pdf"`);
 
     await PdfGenerator.generateSpjPdf(programId, tenantId, res);
   } catch (error) {
