@@ -17,6 +17,7 @@ export default function Users() {
   
   // Password Reset State
   const [newPassword, setNewPassword] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Extract currently logged-in User ID from JWT Token to prevent self-deletion
   const getLoggedInUserId = () => {
@@ -135,6 +136,18 @@ export default function Users() {
     }
   };
 
+  // Calculate statistics
+  const totalUsers = users.length;
+  const adminCount = users.filter(u => u.role === 'ADMIN').length;
+  const staffCount = users.filter(u => u.role === 'PETUGAS').length;
+
+  // Filter users based on search
+  const filteredUsers = users.filter(u => {
+    return (u.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+           (u.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+           (u.role || '').toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
@@ -145,11 +158,47 @@ export default function Users() {
         <button className="btn btn-primary" onClick={handleOpenAdd}>➕ Tambah Pengguna</button>
       </div>
 
+      {/* Stats Banner */}
+      <div style={styles.statsRow}>
+        <div className="card glass" style={styles.miniStatCard}>
+          <span style={styles.miniStatLabel}>Total Pengguna</span>
+          <h3 style={styles.miniStatVal}>
+            {totalUsers} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>jiwa</span>
+          </h3>
+        </div>
+        <div className="card glass" style={{ ...styles.miniStatCard, borderLeft: '4px solid hsl(var(--primary))' }}>
+          <span style={styles.miniStatLabel}>🛡️ Administrator (ADMIN)</span>
+          <h3 style={{ ...styles.miniStatVal, color: 'hsl(var(--primary))' }}>
+            {adminCount} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>akun</span>
+          </h3>
+        </div>
+        <div className="card glass" style={{ ...styles.miniStatCard, borderLeft: '4px solid hsl(var(--accent))' }}>
+          <span style={styles.miniStatLabel}>🔑 Petugas Lapangan</span>
+          <h3 style={{ ...styles.miniStatVal, color: 'hsl(var(--accent))' }}>
+            {staffCount} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>akun</span>
+          </h3>
+        </div>
+      </div>
+
+      {/* Search Box */}
+      <div style={styles.searchContainer}>
+        <input
+          type="text"
+          className="input"
+          placeholder="🔍 Cari nama, email, atau peran..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={styles.searchInput}
+        />
+      </div>
+
       <div className="card" style={styles.tableCard}>
         {loading ? (
           <div style={styles.centerText}>Memuat data pengguna...</div>
-        ) : users.length === 0 ? (
-          <div style={styles.centerText}>Belum ada pengguna terdaftar.</div>
+        ) : filteredUsers.length === 0 ? (
+          <div style={styles.centerText}>
+            {users.length === 0 ? 'Belum ada pengguna terdaftar.' : 'Tidak ditemukan pengguna yang cocok.'}
+          </div>
         ) : (
           <div style={styles.tableWrapper}>
             <table style={styles.table}>
@@ -162,7 +211,7 @@ export default function Users() {
                 </tr>
               </thead>
               <tbody>
-                {users.map((u) => (
+                {filteredUsers.map((u) => (
                   <tr key={u.id} style={styles.tr}>
                     <td style={{ ...styles.td, fontWeight: '700', color: 'hsl(var(--foreground))' }}>
                       {u.name} {u.id === loggedInUserId && <span style={styles.meBadge}>Anda</span>}
@@ -327,6 +376,41 @@ const styles = {
     fontSize: '13px',
     color: 'hsl(var(--muted-foreground))',
     marginTop: '4px',
+  },
+  statsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+    gap: '20px',
+    marginBottom: '8px',
+  },
+  miniStatCard: {
+    padding: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  miniStatLabel: {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: 'hsl(var(--muted-foreground))',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+  miniStatVal: {
+    fontSize: '22px',
+    fontWeight: '800',
+    margin: 0,
+  },
+  searchContainer: {
+    display: 'flex',
+    gap: '12px',
+    alignItems: 'center',
+    marginBottom: '10px',
+  },
+  searchInput: {
+    maxWidth: '300px',
+    height: '38px',
+    width: '100%',
   },
   tableCard: {
     padding: '0px',
