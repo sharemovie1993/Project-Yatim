@@ -20,6 +20,11 @@ router.get('/', async (req, res) => {
 
     const data = await prisma.kelompok.findMany({
       where: { tenant_id: tenantId },
+      include: {
+        _count: {
+          select: { anggota: true }
+        }
+      },
       orderBy: { nama_kelompok: 'asc' }
     });
     

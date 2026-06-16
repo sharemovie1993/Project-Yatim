@@ -177,6 +177,19 @@ class ApiService {
     });
   }
 
+  static async updateKelompok(id, updates) {
+    return this.request(`/v1/kelompok/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  static async deleteKelompok(id) {
+    return this.request(`/v1/kelompok/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   static async getAnggotaKelompok(kelompokId) {
     return this.request(`/v1/kelompok/${kelompokId}/anggota`);
   }

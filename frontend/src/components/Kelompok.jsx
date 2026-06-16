@@ -5,11 +5,15 @@ export default function Kelompok() {
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Add group state
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [groupName, setGroupName] = useState('');
-  const [keterangan, setKeterangan] = useState('');
-  const [wilayah, setWilayah] = useState('');
+  // Unified Group Modal state (for Add & Edit)
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [isEdit, setIsEdit] = useState(false);
+  const [editId, setEditId] = useState('');
+  const [formData, setFormData] = useState({
+    nama_kelompok: '',
+    wilayah: '',
+    keterangan: '',
+  });
 
   // Member management state
   const [showMemberModal, setShowMemberModal] = useState(false);
@@ -34,16 +38,60 @@ export default function Kelompok() {
     loadData();
   }, []);
 
-  const handleAddGroup = async (e) => {
+  const handleOpenAdd = () => {
+    setIsEdit(false);
+    setEditId('');
+    setFormData({
+      nama_kelompok: '',
+      wilayah: '',
+      keterangan: '',
+    });
+    setShowGroupModal(true);
+  };
+
+  const handleOpenEdit = (g) => {
+    setIsEdit(true);
+    setEditId(g.id);
+    setFormData({
+      nama_kelompok: g.nama_kelompok,
+      wilayah: g.wilayah || '',
+      keterangan: g.keterangan || '',
+    });
+    setShowGroupModal(true);
+  };
+
+  const handleSaveGroup = async (e) => {
     e.preventDefault();
-    if (!groupName.trim()) return alert('Nama kelompok wajib diisi.');
+    if (!formData.nama_kelompok.trim()) return alert('Nama kelompok wajib diisi.');
     try {
-      await ApiService.addKelompok(groupName.trim().toUpperCase(), keterangan, wilayah);
-      alert('Kelompok baru berhasil ditambahkan.');
-      setShowAddModal(false);
+      const payload = {
+        nama_kelompok: formData.nama_kelompok.trim().toUpperCase(),
+        wilayah: formData.wilayah.trim(),
+        keterangan: formData.keterangan.trim(),
+      };
+
+      if (isEdit) {
+        await ApiService.updateKelompok(editId, payload);
+        alert('Data kelompok berhasil diperbarui.');
+      } else {
+        await ApiService.addKelompok(payload.nama_kelompok, payload.keterangan, payload.wilayah);
+        alert('Kelompok baru berhasil ditambahkan.');
+      }
+      setShowGroupModal(false);
       loadData();
     } catch (err) {
-      alert('Gagal menambah kelompok: ' + err.message);
+      alert('Gagal menyimpan kelompok: ' + err.message);
+    }
+  };
+
+  const handleDeleteGroup = async (id) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus kelompok ini? Seluruh hubungan anggota di dalamnya juga akan terhapus.')) return;
+    try {
+      await ApiService.deleteKelompok(id);
+      alert('Kelompok berhasil dihapus.');
+      loadData();
+    } catch (err) {
+      alert('Gagal menghapus kelompok: ' + err.message);
     }
   };
 
@@ -73,6 +121,9 @@ export default function Kelompok() {
       // Reload members
       const mRes = await ApiService.getAnggotaKelompok(selectedGroup.id);
       setMembers(mRes.data || []);
+      // Reload groups list to update count badges in background
+      const gRes = await ApiService.getKelompok();
+      setGroups(gRes.data || []);
     } catch (err) {
       alert('Gagal menambah anggota: ' + err.message);
     }
@@ -85,6 +136,9 @@ export default function Kelompok() {
       // Reload members
       const mRes = await ApiService.getAnggotaKelompok(selectedGroup.id);
       setMembers(mRes.data || []);
+      // Reload groups list to update count badges in background
+      const gRes = await ApiService.getKelompok();
+      setGroups(gRes.data || []);
     } catch (err) {
       alert('Gagal mengeluarkan anggota: ' + err.message);
     }
@@ -93,9 +147,14 @@ export default function Kelompok() {
   // Filter out mustahiqs who are already members
   const availableMustahiqs = allMustahiqs.filter(m => {
     const isMember = members.some(mem => mem.id === m.id);
-    const matchSearch = m.nama_lengkap.toLowerCase().includes(memberSearch.toLowerCase());
+    const matchSearch = (m.nama_lengkap || '').toLowerCase().includes(memberSearch.toLowerCase());
     return !isMember && matchSearch;
   });
+
+  // Calculate statistics
+  const totalGroups = groups.length;
+  const totalDistributed = groups.reduce((acc, g) => acc + (g._count?.anggota || 0), 0);
+  const averageMembers = totalGroups > 0 ? (totalDistributed / totalGroups).toFixed(1) : '0';
 
   return (
     <div style={styles.container}>
@@ -104,47 +163,72 @@ export default function Kelompok() {
           <h1 style={styles.title}>Kelompok Distribusi Zakat</h1>
           <p style={styles.subtitle}>Kelola kelompok penyaluran santunan mustahiq per wilayah kerja</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>➕ Tambah Kelompok</button>
+        <button className="btn btn-primary" onClick={handleOpenAdd}>➕ Tambah Kelompok</button>
+      </div>
+
+      {/* Stats Banner */}
+      <div style={styles.statsRow}>
+        <div className="card glass" style={styles.miniStatCard}>
+          <span style={styles.miniStatLabel}>Total Kelompok</span>
+          <h3 style={styles.miniStatVal}>
+            {totalGroups} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>wilayah</span>
+          </h3>
+        </div>
+        <div className="card glass" style={{ ...styles.miniStatCard, borderLeft: '4px solid hsl(var(--primary))' }}>
+          <span style={styles.miniStatLabel}>👥 Total Terdistribusi</span>
+          <h3 style={{ ...styles.miniStatVal, color: 'hsl(var(--primary))' }}>
+            {totalDistributed} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>jiwa</span>
+          </h3>
+        </div>
+        <div className="card glass" style={{ ...styles.miniStatCard, borderLeft: '4px solid hsl(var(--accent))' }}>
+          <span style={styles.miniStatLabel}>📊 Rata-rata Anggota</span>
+          <h3 style={{ ...styles.miniStatVal, color: 'hsl(var(--accent))' }}>
+            {averageMembers} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>jiwa/kelompok</span>
+          </h3>
+        </div>
       </div>
 
       <div style={styles.grid}>
-        {loading && !showMemberModal ? (
+        {loading && !showMemberModal && !showGroupModal ? (
           <div style={styles.centerText}>Memuat data kelompok...</div>
         ) : groups.length === 0 ? (
           <div style={styles.centerText}>Belum ada kelompok terdaftar.</div>
         ) : (
           groups.map(g => (
-            <div className="card" key={g.id} style={styles.groupCard}>
+            <div className="card glass" key={g.id} style={styles.groupCard}>
               <div style={styles.cardHeader}>
                 <h3 style={styles.groupName}>{g.nama_kelompok}</h3>
-                <span style={styles.wilayahBadge}>{g.wilayah || 'Umum'}</span>
+                <div style={styles.headerRight}>
+                  <span style={styles.wilayahBadge}>{g.wilayah || 'Umum'}</span>
+                  <span style={styles.countBadge}>{g._count?.anggota || 0} jiwa</span>
+                </div>
               </div>
               <p style={styles.groupDesc}>{g.keterangan || 'Tidak ada keterangan.'}</p>
               
               <div style={styles.cardFooter}>
-                <button className="btn btn-outline" style={styles.manageBtn} onClick={() => handleOpenMembers(g)}>
-                  👥 Kelola Anggota
-                </button>
+                <button className="btn btn-outline" style={styles.iconBtn} title="Ubah Info" onClick={() => handleOpenEdit(g)}>✏️ Edit</button>
+                <button className="btn btn-outline" style={{ ...styles.iconBtn, color: '#ef4444' }} title="Hapus Kelompok" onClick={() => handleDeleteGroup(g.id)}>🗑️ Hapus</button>
+                <button className="btn btn-primary" style={styles.actionBtn} onClick={() => handleOpenMembers(g)}>👥 Anggota</button>
               </div>
             </div>
           ))
         )}
       </div>
 
-      {/* Add Group Modal */}
-      {showAddModal && (
+      {/* Add / Edit Group Modal */}
+      {showGroupModal && (
         <div style={styles.modalOverlay}>
           <div className="card" style={styles.modalContent}>
-            <h3 style={styles.modalTitle}>Tambah Kelompok Baru</h3>
-            <form onSubmit={handleAddGroup} style={styles.form}>
+            <h3 style={styles.modalTitle}>{isEdit ? 'Ubah Informasi Kelompok' : 'Tambah Kelompok Baru'}</h3>
+            <form onSubmit={handleSaveGroup} style={styles.form}>
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Nama Kelompok *</label>
                 <input
                   type="text"
                   className="input"
                   placeholder="Contoh: KELOMPOK CIBOGO"
-                  value={groupName}
-                  onChange={(e) => setGroupName(e.target.value)}
+                  value={formData.nama_kelompok}
+                  onChange={(e) => setFormData({ ...formData, nama_kelompok: e.target.value })}
                   required
                 />
               </div>
@@ -155,8 +239,8 @@ export default function Kelompok() {
                   type="text"
                   className="input"
                   placeholder="Contoh: RW 04 Cibogo"
-                  value={wilayah}
-                  onChange={(e) => setWilayah(e.target.value)}
+                  value={formData.wilayah}
+                  onChange={(e) => setFormData({ ...formData, wilayah: e.target.value })}
                 />
               </div>
 
@@ -166,13 +250,13 @@ export default function Kelompok() {
                   type="text"
                   className="input"
                   placeholder="Keterangan singkat"
-                  value={keterangan}
-                  onChange={(e) => setKeterangan(e.target.value)}
+                  value={formData.keterangan}
+                  onChange={(e) => setFormData({ ...formData, keterangan: e.target.value })}
                 />
               </div>
 
               <div style={styles.modalFooterStyle}>
-                <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>Batal</button>
+                <button type="button" className="btn btn-outline" onClick={() => setShowGroupModal(false)}>Batal</button>
                 <button type="submit" className="btn btn-primary">Simpan Kelompok</button>
               </div>
             </form>
@@ -186,7 +270,7 @@ export default function Kelompok() {
           <div className="card" style={styles.largeModalContent}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>Anggota Kelompok: {selectedGroup?.nama_kelompok}</h3>
-              <button className="btn btn-outline" onClick={() => setShowMemberModal(false)}>❌</button>
+              <button className="btn btn-outline" style={styles.closeBtn} onClick={() => setShowMemberModal(false)}>❌</button>
             </div>
 
             <div style={styles.modalSplit}>
@@ -203,7 +287,7 @@ export default function Kelompok() {
                           <p style={styles.memberName}>{m.nama_lengkap}</p>
                           <span style={styles.memberTag}>{m.kategori}</span>
                         </div>
-                        <button className="btn btn-outline" style={styles.removeBtn} onClick={() => handleRemoveMember(m.id)}> Keluarkan</button>
+                        <button className="btn btn-outline" style={styles.removeBtn} onClick={() => handleRemoveMember(m.id)}>Keluarkan</button>
                       </div>
                     ))
                   )}
@@ -255,6 +339,8 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '12px',
   },
   title: {
     fontSize: '26px',
@@ -265,9 +351,31 @@ const styles = {
     color: 'hsl(var(--muted-foreground))',
     marginTop: '4px',
   },
+  statsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '20px',
+    marginBottom: '8px',
+  },
+  miniStatCard: {
+    padding: '16px 20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  miniStatLabel: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+    fontWeight: '500',
+  },
+  miniStatVal: {
+    fontSize: '22px',
+    fontWeight: '800',
+    margin: 0,
+  },
   grid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
     gap: '20px',
   },
   groupCard: {
@@ -275,34 +383,69 @@ const styles = {
     flexDirection: 'column',
     justifyContent: 'space-between',
     gap: '14px',
+    padding: '20px',
   },
   cardHeader: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    gap: '8px',
+  },
+  headerRight: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: '4px',
   },
   groupName: {
-    fontSize: '18px',
+    fontSize: '17px',
     fontWeight: '700',
+    margin: 0,
+    flex: 1,
   },
   wilayahBadge: {
-    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
     color: '#3b82f6',
+    border: '1px solid rgba(59, 130, 246, 0.2)',
     fontWeight: '600',
     fontSize: '11px',
-    padding: '3px 8px',
+    padding: '2px 8px',
     borderRadius: '4px',
+    whiteSpace: 'nowrap',
+  },
+  countBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    color: 'hsl(var(--primary))',
+    border: '1px solid rgba(16, 185, 129, 0.2)',
+    fontWeight: '600',
+    fontSize: '11px',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    whiteSpace: 'nowrap',
   },
   groupDesc: {
     fontSize: '13px',
     color: 'hsl(var(--muted-foreground))',
     lineHeight: '1.4',
+    margin: 0,
+    minHeight: '36px',
   },
   cardFooter: {
     marginTop: '8px',
+    display: 'flex',
+    gap: '8px',
   },
-  manageBtn: {
-    width: '100%',
+  iconBtn: {
+    padding: '6px 10px',
+    fontSize: '12px',
+    cursor: 'pointer',
+  },
+  actionBtn: {
+    flexGrow: 1,
+    padding: '6px 10px',
+    fontSize: '12px',
+    fontWeight: '600',
+    cursor: 'pointer',
   },
   centerText: {
     textAlign: 'center',
@@ -331,6 +474,8 @@ const styles = {
     width: '90%',
     maxWidth: '800px',
     padding: '30px',
+    maxHeight: '90vh',
+    overflowY: 'auto',
   },
   modalHeader: {
     display: 'flex',
@@ -338,9 +483,15 @@ const styles = {
     alignItems: 'center',
     marginBottom: '20px',
   },
+  closeBtn: {
+    padding: '4px 8px',
+    fontSize: '12px',
+    cursor: 'pointer',
+  },
   modalTitle: {
     fontSize: '18px',
     fontWeight: '700',
+    margin: 0,
   },
   form: {
     display: 'flex',
@@ -365,7 +516,7 @@ const styles = {
   },
   modalSplit: {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
     gap: '24px',
   },
   splitCol: {
@@ -379,6 +530,7 @@ const styles = {
     color: 'hsl(var(--foreground))',
     borderBottom: '1px solid hsl(var(--border))',
     paddingBottom: '6px',
+    margin: 0,
   },
   searchBox: {
     marginBottom: '6px',
@@ -392,7 +544,7 @@ const styles = {
     border: '1px solid hsl(var(--border))',
     borderRadius: '8px',
     padding: '10px',
-    backgroundColor: 'hsl(var(--background))',
+    backgroundColor: 'rgba(255,255,255,0.01)',
   },
   memberItem: {
     display: 'flex',
@@ -406,6 +558,7 @@ const styles = {
   memberName: {
     fontSize: '13px',
     fontWeight: '600',
+    margin: 0,
   },
   memberTag: {
     fontSize: '10px',
@@ -414,16 +567,19 @@ const styles = {
   addBtn: {
     padding: '4px 10px',
     fontSize: '11px',
+    cursor: 'pointer',
   },
   removeBtn: {
     padding: '4px 10px',
     fontSize: '11px',
     color: '#ef4444',
+    cursor: 'pointer',
   },
   emptyText: {
     textAlign: 'center',
     color: 'hsl(var(--muted-foreground))',
     fontSize: '12px',
     padding: '20px 0',
+    margin: 0,
   },
 };
