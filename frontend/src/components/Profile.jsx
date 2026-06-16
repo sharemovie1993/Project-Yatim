@@ -22,6 +22,12 @@ export default function Profile() {
     single_group_restriction: false,
   });
 
+  const [kopParent, setKopParent] = useState('');
+  const [jabatanPimpinan, setJabatanPimpinan] = useState('Kepala Sekolah');
+  const [nipPimpinan, setNipPimpinan] = useState('');
+  const [jabatanBendahara, setJabatanBendahara] = useState('Bendahara');
+  const [nipBendahara, setNipBendahara] = useState('');
+
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingStempel, setUploadingStempel] = useState(false);
 
@@ -43,6 +49,12 @@ export default function Profile() {
       setLogoUrl(settings.logo_url || '');
       setStempelUrl(settings.stempel_url || '');
       
+      setKopParent(settings.kop_parent || '');
+      setJabatanPimpinan(settings.jabatan_pimpinan || 'Kepala Sekolah');
+      setNipPimpinan(settings.nip_pimpinan || '');
+      setJabatanBendahara(settings.jabatan_bendahara || 'Bendahara');
+      setNipBendahara(settings.nip_bendahara || '');
+
       if (settings.rules) {
         setRules({
           max_age_yatim: settings.rules.max_age_yatim || 15,
@@ -109,6 +121,11 @@ export default function Profile() {
         kota,
         logo_url: logoUrl,
         stempel_url: stempelUrl,
+        kop_parent: kopParent,
+        jabatan_pimpinan: jabatanPimpinan,
+        nip_pimpinan: nipPimpinan,
+        jabatan_bendahara: jabatanBendahara,
+        nip_bendahara: nipBendahara,
         rules: {
           ...rules,
           max_mustahiq: tenant?.settings?.rules?.max_mustahiq || 100
@@ -164,6 +181,17 @@ export default function Profile() {
                     onChange={(e) => setNpwp(e.target.value)}
                   />
                 </div>
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Lembaga Induk / Yayasan Pengayom (Untuk Kop Surat)</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Contoh: YAYASAN AT-TAQWA PURWAKARTA"
+                  value={kopParent}
+                  onChange={(e) => setKopParent(e.target.value)}
+                />
               </div>
 
               <div style={styles.inputGroup}>
@@ -302,7 +330,7 @@ export default function Profile() {
               <h3 style={styles.sectionTitle}>✍️ Pejabat Penandatangan SPJ</h3>
               
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Nama Kepala Sekolah / Pimpinan *</label>
+                <label style={styles.label}>Nama Pimpinan Lembaga / Kepala Sekolah *</label>
                 <input
                   type="text"
                   className="input"
@@ -311,6 +339,30 @@ export default function Profile() {
                   onChange={(e) => setKepalaSekolah(e.target.value)}
                   required
                 />
+              </div>
+
+              <div style={styles.row}>
+                <div style={styles.col}>
+                  <label style={styles.label}>Jabatan Pimpinan *</label>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Contoh: Kepala Sekolah"
+                    value={jabatanPimpinan}
+                    onChange={(e) => setJabatanPimpinan(e.target.value)}
+                    required
+                  />
+                </div>
+                <div style={styles.col}>
+                  <label style={styles.label}>NIP / NIK Pimpinan</label>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Contoh: 198008122005011002"
+                    value={nipPimpinan}
+                    onChange={(e) => setNipPimpinan(e.target.value)}
+                  />
+                </div>
               </div>
 
               <div style={styles.inputGroup}>
@@ -323,6 +375,30 @@ export default function Profile() {
                   onChange={(e) => setBendahara(e.target.value)}
                   required
                 />
+              </div>
+
+              <div style={styles.row}>
+                <div style={styles.col}>
+                  <label style={styles.label}>Jabatan Bendahara *</label>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Contoh: Bendahara"
+                    value={jabatanBendahara}
+                    onChange={(e) => setJabatanBendahara(e.target.value)}
+                    required
+                  />
+                </div>
+                <div style={styles.col}>
+                  <label style={styles.label}>NIP / NIK Bendahara</label>
+                  <input
+                    type="text"
+                    className="input"
+                    placeholder="Contoh: 198203152009022001"
+                    value={nipBendahara}
+                    onChange={(e) => setNipBendahara(e.target.value)}
+                  />
+                </div>
               </div>
 
               <h3 style={{ ...styles.sectionTitle, marginTop: '24px' }}>⚙️ Aturan & Validasi Aplikasi</h3>

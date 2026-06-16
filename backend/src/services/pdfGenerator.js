@@ -3,6 +3,37 @@ const prisma = require('../prisma');
 const path = require('path');
 const fs = require('fs');
 
+function terbilang(angka) {
+  const bil = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
+  let temp = "";
+  if (angka < 12) {
+    temp = " " + bil[angka];
+  } else if (angka < 20) {
+    temp = terbilang(angka - 10) + " belas";
+  } else if (angka < 100) {
+    temp = terbilang(Math.floor(angka / 10)) + " puluh" + terbilang(angka % 10);
+  } else if (angka < 200) {
+    temp = " seratus" + terbilang(angka - 100);
+  } else if (angka < 1000) {
+    temp = terbilang(Math.floor(angka / 100)) + " ratus" + terbilang(angka % 100);
+  } else if (angka < 2000) {
+    temp = " seribu" + terbilang(angka - 1000);
+  } else if (angka < 1000000) {
+    temp = terbilang(Math.floor(angka / 1000)) + " ribu" + terbilang(angka % 1000);
+  } else if (angka < 1000000000) {
+    temp = terbilang(Math.floor(angka / 1000000)) + " juta" + terbilang(angka % 1000000);
+  } else if (angka < 1000000000000) {
+    temp = terbilang(Math.floor(angka / 1000000000)) + " milyar" + terbilang(angka % 1000000000);
+  }
+  return temp;
+}
+
+function formatTerbilang(angka) {
+  if (angka === 0) return "Nol Rupiah";
+  const hasil = terbilang(angka).trim();
+  return hasil.charAt(0).toUpperCase() + hasil.slice(1) + " Rupiah";
+}
+
 class PdfGenerator {
   static async generateSpjPdf(programId, tenantId, res) {
     // 1. Fetch Program, Tenant, and Penyaluran Data
@@ -28,13 +59,18 @@ class PdfGenerator {
       settings = {};
     }
 
-    const schoolName = tenant.name || 'Madrasah Uji Coba';
-    const address = settings.address || 'Jl. Raya Pendidikan No. 123';
-    const kepalaSekolah = settings.kepala_sekolah || 'Ahmad Dahlan, M.Pd';
-    const bendahara = settings.bendahara || 'Siti Aminah, S.Pd';
+    const schoolName = tenant.name || '...........................................';
+    const address = settings.address || '......................................................................';
+    const kepalaSekolah = settings.kepala_sekolah || '...........................................';
+    const bendahara = settings.bendahara || '...........................................';
+    const kopParent = settings.kop_parent || '';
+    const jabatanPimpinan = settings.jabatan_pimpinan || 'Kepala Sekolah';
+    const nipPimpinan = settings.nip_pimpinan || '';
+    const jabatanBendahara = settings.jabatan_bendahara || 'Bendahara';
+    const nipBendahara = settings.nip_bendahara || '';
 
-    // 2. Initialize PDF Document
-    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    // 2. Initialize PDF Document (margins: 40 on each side)
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
 
     // Stream the PDF directly to the Express response
     doc.pipe(res);
@@ -52,9 +88,15 @@ class PdfGenerator {
     // Header drawing
     if (logoPath) {
       // Draw logo on the left, details on the right
-      doc.image(logoPath, 50, 45, { width: 55, height: 55 });
-      doc.fontSize(14).text(schoolName.toUpperCase(), 120, 45, { bold: true });
-      doc.fontSize(9).text(address, 120, 62);
+      doc.image(logoPath, 40, 35, { width: 55, height: 55 });
+      
+      let currentHeaderY = 35;
+      if (kopParent) {
+        doc.fontSize(9.5).font('Helvetica-Bold').text(kopParent.toUpperCase(), 110, currentHeaderY);
+        currentHeaderY += 13;
+      }
+      doc.fontSize(13.5).font('Helvetica-Bold').text(schoolName.toUpperCase(), 110, currentHeaderY);
+      doc.fontSize(8.5).font('Helvetica').text(address, 110, currentHeaderY + 16);
 
       let contactInfo = [];
       if (settings.phone_number) contactInfo.push(`Telp: ${settings.phone_number}`);
@@ -62,12 +104,17 @@ class PdfGenerator {
       if (settings.npwp) contactInfo.push(`NPWP: ${settings.npwp}`);
 
       if (contactInfo.length > 0) {
-        doc.fontSize(8).text(contactInfo.join(' | '), 120, 76);
+        doc.fontSize(8).text(contactInfo.join(' | '), 110, currentHeaderY + 27);
       }
     } else {
       // Fallback: Text only centered layout
-      doc.fontSize(16).text(schoolName.toUpperCase(), { align: 'center', bold: true });
-      doc.fontSize(10).text(address, { align: 'center' });
+      let currentHeaderY = 35;
+      if (kopParent) {
+        doc.fontSize(10).font('Helvetica-Bold').text(kopParent.toUpperCase(), { align: 'center' });
+        currentHeaderY += 13;
+      }
+      doc.fontSize(14).font('Helvetica-Bold').text(schoolName.toUpperCase(), { align: 'center' });
+      doc.fontSize(9).font('Helvetica').text(address, { align: 'center' });
 
       let contactInfo = [];
       if (settings.phone_number) contactInfo.push(`Telp: ${settings.phone_number}`);
@@ -80,78 +127,127 @@ class PdfGenerator {
     }
 
     // Divider Line (Double lines: thick and thin)
-    const headerBottom = logoPath ? 110 : (doc.y > 100 ? doc.y : 100);
-    doc.moveTo(50, headerBottom).lineTo(545, headerBottom).lineWidth(2).stroke();
-    doc.moveTo(50, headerBottom + 3).lineTo(545, headerBottom + 3).lineWidth(0.5).stroke();
+    const headerBottom = logoPath ? 98 : (doc.y > 90 ? doc.y : 90);
+    doc.moveTo(40, headerBottom).lineTo(555, headerBottom).lineWidth(2.5).stroke();
+    doc.moveTo(40, headerBottom + 3).lineTo(555, headerBottom + 3).lineWidth(0.8).stroke();
     
     // Set current y below the header divider
-    doc.y = headerBottom + 15;
+    doc.y = headerBottom + 12;
 
     // Title
-    doc.fontSize(14).text('LAPORAN PERTANGGUNGJAWABAN (SPJ) SANTUNAN', { align: 'center', bold: true });
-    doc.fontSize(12).text(`Program: ${program.nama_program}`, { align: 'center' });
-    doc.fontSize(10).text(`Tanggal Pelaksanaan: ${program.tanggal_pelaksanaan}`, { align: 'center' });
-    doc.moveDown(2);
+    doc.fontSize(11).font('Helvetica-Bold').text('SURAT PERNYATAAN TANGGUNG JAWAB BELANJA (SPTB)', { align: 'center' });
+    doc.fontSize(9).font('Helvetica').text(`Nomor: 003/SPJ-${program.id.split('-')[0].toUpperCase()}/${new Date(program.tanggal_pelaksanaan || Date.now()).getFullYear()}`, { align: 'center' });
+    doc.moveDown(0.8);
+
+    // Calculate total amount
+    let totalDana = 0;
+    for (const p of penyaluran) {
+      const numericAmount = parseInt(p.jumlah_diterima.replace(/[^0-9]/g, ''), 10) || 0;
+      totalDana += numericAmount;
+    }
+
+    // Declaring statement paragraph
+    const declaringText = `Yang bertanda tangan di bawah ini Pimpinan ${schoolName} menyatakan bertanggung jawab penuh atas penyaluran dana bantuan sosial dalam program "${program.nama_program}" yang dilaksanakan pada tanggal ${program.tanggal_pelaksanaan}, dengan total penyaluran dana sebesar Rp ${totalDana.toLocaleString('id-ID')} (${formatTerbilang(totalDana)}). Rincian penerima bantuan adalah sebagai berikut:`;
+
+    doc.fontSize(9.5).font('Helvetica').text(declaringText, { align: 'justify', lineGap: 3 });
+    doc.moveDown(1.2);
+
+    // Helper to draw vertical and horizontal cell borders
+    const drawRowBorders = (yStart, yEnd) => {
+      doc.lineJoin('miter').lineWidth(0.5).strokeColor('#000000');
+      // Vertical borders
+      doc.moveTo(40, yStart).lineTo(40, yEnd).stroke();
+      doc.moveTo(70, yStart).lineTo(70, yEnd).stroke();
+      doc.moveTo(210, yStart).lineTo(210, yEnd).stroke();
+      doc.moveTo(305, yStart).lineTo(305, yEnd).stroke();
+      doc.moveTo(380, yStart).lineTo(380, yEnd).stroke();
+      doc.moveTo(465, yStart).lineTo(465, yEnd).stroke();
+      doc.moveTo(555, yStart).lineTo(555, yEnd).stroke();
+      // Horizontal border at the bottom
+      doc.moveTo(40, yEnd).lineTo(555, yEnd).stroke();
+    };
 
     // Table Header
     const tableTop = doc.y;
-    doc.fontSize(10).text('No', 50, tableTop, { bold: true });
-    doc.text('Nama Lengkap', 80, tableTop, { bold: true });
-    doc.text('Umur', 220, tableTop, { bold: true });
-    doc.text('Kategori', 270, tableTop, { bold: true });
-    doc.text('Jumlah Diterima', 360, tableTop, { bold: true });
-    doc.text('Status', 470, tableTop, { bold: true });
+    doc.save();
+    doc.fillColor('#e5e7eb').rect(40, tableTop, 515, 20).fill();
+    doc.restore();
 
-    doc.moveTo(50, tableTop + 15).lineTo(545, tableTop + 15).stroke();
+    doc.fontSize(8.5).font('Helvetica-Bold');
+    doc.text('No', 42, tableTop + 6, { width: 26, align: 'center' });
+    doc.text('Nama Lengkap Mustahiq', 74, tableTop + 6, { width: 132 });
+    doc.text('Nomor NIK', 214, tableTop + 6, { width: 87 });
+    doc.text('Kategori', 309, tableTop + 6, { width: 67 });
+    doc.text('Jumlah Bantuan', 384, tableTop + 6, { width: 77, align: 'right' });
+    doc.text('Tanda Terima', 469, tableTop + 6, { width: 82, align: 'center' });
+
+    drawRowBorders(tableTop, tableTop + 20);
 
     // Table Rows
     let currentY = tableTop + 20;
     let index = 1;
-    let totalDana = 0;
-
-    const calculateAge = (birthDateString) => {
-      if (!birthDateString) return '-';
-      const birthDate = new Date(birthDateString);
-      if (isNaN(birthDate.getTime())) return '-';
-      const today = new Date();
-      let age = today.getFullYear() - birthDate.getFullYear();
-      const monthDiff = today.getMonth() - birthDate.getMonth();
-      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-        age--;
-      }
-      return `${age} th`;
-    };
 
     for (const p of penyaluran) {
-      // Prevent overflow
-      if (currentY > 700) {
+      // Prevent overflow (bottom page limit)
+      if (currentY > 740) {
         doc.addPage();
         currentY = 50;
+        
+        // Redraw Header on new page
+        doc.save();
+        doc.fillColor('#e5e7eb').rect(40, currentY, 515, 20).fill();
+        doc.restore();
+
+        doc.fontSize(8.5).font('Helvetica-Bold');
+        doc.text('No', 42, currentY + 6, { width: 26, align: 'center' });
+        doc.text('Nama Lengkap Mustahiq', 74, currentY + 6, { width: 132 });
+        doc.text('Nomor NIK', 214, currentY + 6, { width: 87 });
+        doc.text('Kategori', 309, currentY + 6, { width: 67 });
+        doc.text('Jumlah Bantuan', 384, currentY + 6, { width: 77, align: 'right' });
+        doc.text('Tanda Terima', 469, currentY + 6, { width: 82, align: 'center' });
+
+        drawRowBorders(currentY, currentY + 20);
+        currentY += 20;
       }
 
-      doc.text(index.toString(), 50, currentY);
-      doc.text(p.mustahiq?.nama_lengkap || 'Tanpa Nama', 80, currentY);
-      doc.text(calculateAge(p.mustahiq?.tanggal_lahir), 220, currentY);
-      doc.text(p.mustahiq?.kategori || 'UMUM', 270, currentY);
-      doc.text(p.jumlah_diterima, 360, currentY);
-      doc.text(p.status, 470, currentY);
+      doc.fontSize(8.5).font('Helvetica');
+      doc.text(index.toString(), 42, currentY + 6, { width: 26, align: 'center' });
+      doc.text(p.mustahiq?.nama_lengkap || 'Tanpa Nama', 74, currentY + 6, { width: 132 });
+      doc.text(p.mustahiq?.nik || '-', 214, currentY + 6, { width: 87 });
+      doc.text(p.mustahiq?.kategori || 'UMUM', 309, currentY + 6, { width: 67 });
+      doc.text(p.jumlah_diterima, 384, currentY + 6, { width: 77, align: 'right' });
 
-      // Simple number parsing for totaling
-      const numericAmount = parseInt(p.jumlah_diterima.replace(/[^0-9]/g, ''), 10) || 0;
-      totalDana += numericAmount;
+      // Receipt signatures selang-seling zig-zag
+      const sigText = index % 2 !== 0 ? `${index}. .................` : `      ${index}. .................`;
+      doc.fontSize(7.5).text(sigText, 472, currentY + 6, { width: 78 });
 
+      drawRowBorders(currentY, currentY + 20);
       currentY += 20;
       index++;
     }
 
-    doc.moveTo(50, currentY).lineTo(545, currentY).stroke();
-    currentY += 10;
-
     // Total Row
-    doc.fontSize(11).text('TOTAL PENYALURAN DANA:', 80, currentY, { bold: true });
-    doc.text(`Rp ${totalDana.toLocaleString('id-ID')}`, 360, currentY, { bold: true });
+    if (currentY > 740) {
+      doc.addPage();
+      currentY = 50;
+    }
 
-    currentY += 40;
+    doc.fontSize(8.5).font('Helvetica-Bold');
+    doc.text('JUMLAH TOTAL PENYALURAN DANA', 74, currentY + 6, { width: 300 });
+    doc.text(`Rp ${totalDana.toLocaleString('id-ID')}`, 384, currentY + 6, { width: 77, align: 'right' });
+
+    // Draw custom borders for total row (merging columns 1-4, keeping amount and signature columns separate)
+    doc.lineJoin('miter').lineWidth(0.5).strokeColor('#000000');
+    doc.moveTo(40, currentY).lineTo(40, currentY + 20).stroke();
+    doc.moveTo(380, currentY).lineTo(380, currentY + 20).stroke();
+    doc.moveTo(465, currentY).lineTo(465, currentY + 20).stroke();
+    doc.moveTo(555, currentY).lineTo(555, currentY + 20).stroke();
+    doc.moveTo(40, currentY + 20).lineTo(555, currentY + 20).stroke();
+    currentY += 25;
+
+    // Spelled out words (Terbilang)
+    doc.fontSize(8.5).font('Helvetica-Oblique').text(`Terbilang: "${formatTerbilang(totalDana)}"`, 40, currentY);
+    currentY += 35;
 
     // Signatures
     if (currentY > 660) {
@@ -159,18 +255,21 @@ class PdfGenerator {
       currentY = 50;
     }
 
-    doc.fontSize(10);
+    doc.fontSize(9.5).font('Helvetica');
     const signatureY = currentY + 15;
 
     // Date
-    const kota = settings.kota || 'Purwakarta';
+    const kota = settings.kota || '...........................................';
     const dateStr = `${kota}, ${program.tanggal_pelaksanaan}`;
     doc.text(dateStr, 380, currentY, { align: 'left' });
     
-    // Headmaster Signature
+    // Headmaster / Pimpinan Signature
     doc.text('Mengetahui,', 50, signatureY);
-    doc.text('Kepala Sekolah', 50, signatureY + 15);
-    doc.text(kepalaSekolah, 50, signatureY + 80, { underline: true, bold: true });
+    doc.text(jabatanPimpinan, 50, signatureY + 15);
+    doc.font('Helvetica-Bold').text(kepalaSekolah, 50, signatureY + 80, { underline: true });
+    if (nipPimpinan) {
+      doc.fontSize(8.5).font('Helvetica').text(`NIP/NIK. ${nipPimpinan}`, 50, signatureY + 95);
+    }
 
     // Overlay Stempel image on Headmaster Signature area if it exists
     let stempelPath = null;
@@ -183,13 +282,17 @@ class PdfGenerator {
     }
 
     if (stempelPath) {
-      doc.image(stempelPath, 85, signatureY + 20, { width: 70, height: 70 });
+      doc.image(stempelPath, 85, signatureY + 25, { width: 65, height: 65 });
     }
 
-    // Treasurer Signature
+    // Treasurer / Bendahara Signature
+    doc.fontSize(9.5).font('Helvetica');
     doc.text('Dibuat oleh,', 380, signatureY);
-    doc.text('Bendahara', 380, signatureY + 15);
-    doc.text(bendahara, 380, signatureY + 80, { underline: true, bold: true });
+    doc.text(jabatanBendahara, 380, signatureY + 15);
+    doc.font('Helvetica-Bold').text(bendahara, 380, signatureY + 80, { underline: true });
+    if (nipBendahara) {
+      doc.fontSize(8.5).font('Helvetica').text(`NIP/NIK. ${nipBendahara}`, 380, signatureY + 95);
+    }
 
     // End Document
     doc.end();
@@ -197,3 +300,4 @@ class PdfGenerator {
 }
 
 module.exports = PdfGenerator;
+
