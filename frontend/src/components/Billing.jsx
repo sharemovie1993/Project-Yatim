@@ -136,6 +136,11 @@ export default function Billing() {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyTab, setHistoryTab] = useState('licenses');
 
+  // Modern UI UX states
+  const [hoveredCard, setHoveredCard] = useState(null);
+  const [copiedVa, setCopiedVa] = useState(false);
+  const [copiedKeyId, setCopiedKeyId] = useState(null);
+
   const showAlert = (message) => {
     return new Promise((resolve) => {
       setDialog({
@@ -594,6 +599,106 @@ export default function Billing() {
     setPaymentDetails(null);
   };
 
+  const handlePrintQris = () => {
+    if (!paymentDetails || !paymentDetails.qr_url) return;
+    const printWindow = window.open('', '_blank', 'width=600,height=600');
+    if (!printWindow) {
+      showAlert('Gagal membuka jendela cetak. Pastikan pop-up dibolehkan di browser Anda.');
+      return;
+    }
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Cetak QRIS Pembayaran - Mustahiq Care</title>
+          <style>
+            body {
+              font-family: system-ui, -apple-system, sans-serif;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              padding: 40px;
+              text-align: center;
+              color: #1f2937;
+            }
+            .title { font-size: 20px; font-weight: 800; margin-bottom: 4px; }
+            .subtitle { font-size: 13px; color: #6b7280; margin-bottom: 20px; }
+            .amount-box {
+              background-color: #f0fdf4;
+              border: 1px solid #bbf7d0;
+              padding: 16px 24px;
+              border-radius: 12px;
+              margin-bottom: 24px;
+              display: inline-block;
+            }
+            .amount-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #16a34a; font-weight: bold; }
+            .amount-val { font-size: 32px; font-weight: 900; color: #15803d; margin-top: 4px; }
+            .qr-image { width: 280px; height: 280px; object-fit: contain; border: 1px solid #e5e7eb; padding: 12px; border-radius: 12px; background: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+            .info { font-size: 12px; color: #6b7280; margin-top: 20px; max-width: 380px; line-height: 1.5; }
+            @media print {
+              .no-print { display: none; }
+            }
+            .btn {
+              background-color: #10b981;
+              color: white;
+              border: none;
+              padding: 10px 24px;
+              border-radius: 8px;
+              font-weight: 700;
+              font-size: 14px;
+              cursor: pointer;
+              margin-top: 24px;
+              box-shadow: 0 4px 6px rgba(16, 185, 129, 0.2);
+            }
+          </style>
+        </head>
+        <body>
+          <div class="title">QRIS Pembayaran Lisensi</div>
+          <div class="subtitle">${paymentDetails.school_name || ''}</div>
+          <div class="amount-box">
+            <div class="amount-label">Total Nominal Tagihan</div>
+            <div class="amount-val">${formatPrice(paymentDetails.amount)}</div>
+          </div>
+          <div>
+            <img class="qr-image" src="${paymentDetails.qr_url}" alt="QRIS Code" />
+          </div>
+          <div class="info">Silakan scan kode QRIS di atas dengan aplikasi mobile banking atau e-wallet (Gopay, OVO, Dana, LinkAja, dll.) Anda untuk melakukan pembayaran otomatis.</div>
+          <button class="btn no-print" onclick="window.print()">Cetak Sekarang</button>
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+              }, 500);
+            }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const handleDownloadQris = async () => {
+    if (!paymentDetails || !paymentDetails.qr_url) return;
+    try {
+      const response = await fetch(paymentDetails.qr_url);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `QRIS-Invoice-${paymentDetails.invoice_number || 'Billing'}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      const a = document.createElement('a');
+      a.href = paymentDetails.qr_url;
+      a.target = '_blank';
+      a.download = `QRIS-Invoice-${paymentDetails.invoice_number || 'Billing'}.png`;
+      a.click();
+    }
+  };
+
   const handlePrintInvoice = (invoice, isPaid = true) => {
     if (!invoice || !invoice.invoice_number) {
       showAlert('Detail invoice/kuitansi tidak ditemukan.');
@@ -615,6 +720,13 @@ export default function Billing() {
     const diff = expiry.getTime() - today.getTime();
     daysRemaining = Math.ceil(diff / (1000 * 3600 * 24));
   }
+
+  // Calculate dynamic stats
+  const activeCoreCount = (expiryDateStr && daysRemaining > 0) ? 1 : 0;
+  const activeVpnCount = (vpnLicenseKey && (tunnelStatus.status === 'connected' || tunnelStatus.status === 'disconnected' || tunnelStatus.status === 'installed')) ? 1 : 0;
+  const totalActiveLicenses = historyLicenses.length > 0 
+    ? historyLicenses.filter(lic => lic.is_active === 1 && lic.status === 'active').length 
+    : (activeCoreCount + activeVpnCount);
 
   return (
     <div style={styles.container}>
@@ -651,6 +763,77 @@ export default function Billing() {
       <div style={styles.header}>
         <h1 style={styles.title}>Lisensi & Billing Tagihan</h1>
         <p style={styles.subtitle}>Kelola status langganan aplikasi Mustahiq Care, update kunci lisensi, dan lunasi tagihan pembayaran</p>
+      </div>
+
+      {/* Modern Stats Banner */}
+      <div style={styles.statsGrid}>
+        <div 
+          style={{
+            ...styles.statsCard,
+            transform: hoveredCard === 'lic' ? 'translateY(-2px)' : 'none',
+            boxShadow: hoveredCard === 'lic' ? '0 10px 20px -5px rgba(0, 0, 0, 0.08)' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+          }}
+          onMouseEnter={() => setHoveredCard('lic')}
+          onMouseLeave={() => setHoveredCard(null)}
+        >
+          <div style={styles.statsIconWrapper('emerald')}>
+            <span style={{ fontSize: '20px' }}>🔑</span>
+          </div>
+          <div style={styles.statsInfo}>
+            <span style={styles.statsLabel}>Lisensi Aktif</span>
+            <strong style={styles.statsValue}>{totalActiveLicenses} Aktif</strong>
+            <span style={styles.statsDesc}>
+              Core App: {activeCoreCount > 0 ? 'Aktif' : 'Nonaktif'} | VPN: {activeVpnCount > 0 ? 'Aktif' : 'Nonaktif'}
+            </span>
+          </div>
+        </div>
+        
+        <div 
+          style={{
+            ...styles.statsCard,
+            transform: hoveredCard === 'vpn' ? 'translateY(-2px)' : 'none',
+            boxShadow: hoveredCard === 'vpn' ? '0 10px 20px -5px rgba(0, 0, 0, 0.08)' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+          }}
+          onMouseEnter={() => setHoveredCard('vpn')}
+          onMouseLeave={() => setHoveredCard(null)}
+        >
+          <div style={styles.statsIconWrapper(tunnelStatus.status === 'connected' ? 'emerald' : tunnelStatus.status === 'not_configured' ? 'slate' : 'amber')}>
+            <span style={{ fontSize: '20px' }}>🌐</span>
+          </div>
+          <div style={styles.statsInfo}>
+            <span style={styles.statsLabel}>Status VPN Gateway</span>
+            <strong style={{
+              ...styles.statsValue,
+              color: tunnelStatus.status === 'connected' ? 'hsl(var(--primary))' : tunnelStatus.status === 'not_configured' ? 'hsl(var(--muted-foreground))' : '#f59e0b'
+            }}>
+              {tunnelStatus.status === 'connected' ? 'CONNECTED' : tunnelStatus.status === 'not_configured' ? 'BELUM AKTIF' : 'DISCONNECTED'}
+            </strong>
+            <span style={styles.statsDesc}>
+              {tunnelStatus.status === 'connected' ? (tunnelStatus.subdomain || 'Gateway Aktif') : 'Koneksi jalur aman luar'}
+            </span>
+          </div>
+        </div>
+
+        <div 
+          style={{
+            ...styles.statsCard,
+            transform: hoveredCard === 'trx' ? 'translateY(-2px)' : 'none',
+            boxShadow: hoveredCard === 'trx' ? '0 10px 20px -5px rgba(0, 0, 0, 0.08)' : '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+          }}
+          onMouseEnter={() => setHoveredCard('trx')}
+          onMouseLeave={() => setHoveredCard(null)}
+        >
+          <div style={styles.statsIconWrapper('blue')}>
+            <span style={{ fontSize: '20px' }}>🧾</span>
+          </div>
+          <div style={styles.statsInfo}>
+            <span style={styles.statsLabel}>Riwayat Tagihan</span>
+            <strong style={styles.statsValue}>{historyInvoices.length} Invoice</strong>
+            <span style={styles.statsDesc}>
+              {historyInvoices.filter(inv => inv.status === 'paid').length} Lunas | {historyInvoices.filter(inv => inv.status === 'unpaid' || inv.status === 'pending').length} Tertunda
+            </span>
+          </div>
+        </div>
       </div>
 
       <div style={styles.contentLayout}>
@@ -970,13 +1153,14 @@ export default function Billing() {
                                 <button
                                   type="button"
                                   className="btn btn-outline"
-                                  style={{ padding: '2px 6px', fontSize: '10px', height: '20px' }}
+                                  style={{ padding: '2px 6px', fontSize: '10px', height: '20px', minWidth: '60px' }}
                                   onClick={async () => {
                                     navigator.clipboard.writeText(lic.license_key);
-                                    await showAlert('Kunci lisensi disalin!');
+                                    setCopiedKeyId(lic.id);
+                                    setTimeout(() => setCopiedKeyId(null), 2000);
                                   }}
                                 >
-                                  Salin
+                                  {copiedKeyId === lic.id ? 'Tersalin! ✅' : 'Salin'}
                                 </button>
                                 {isVpn && (
                                   <button
@@ -1114,6 +1298,24 @@ export default function Billing() {
                           <p>Memuat QRIS...</p>
                         )}
                       </div>
+                      <div style={styles.qrActions}>
+                        <button 
+                          type="button" 
+                          className="btn btn-outline" 
+                          style={styles.qrActionBtn} 
+                          onClick={handlePrintQris}
+                        >
+                          🖨️ Cetak QRIS
+                        </button>
+                        <button 
+                          type="button" 
+                          className="btn btn-outline" 
+                          style={styles.qrActionBtn} 
+                          onClick={handleDownloadQris}
+                        >
+                          📥 Unduh QRIS
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div style={styles.payCodeContainer}>
@@ -1122,15 +1324,16 @@ export default function Billing() {
                         <strong style={styles.payCodeText}>{paymentDetails.pay_code || 'Gagal generate kode'}</strong>
                         <button 
                           className="btn btn-outline" 
-                          style={styles.btnCopy} 
+                          style={{ ...styles.btnCopy, minWidth: '90px' }} 
                           onClick={async () => {
                             if (paymentDetails.pay_code) {
                               navigator.clipboard.writeText(paymentDetails.pay_code);
-                              await showAlert('Kode pembayaran disalin ke clipboard!');
+                              setCopiedVa(true);
+                              setTimeout(() => setCopiedVa(false), 2000);
                             }
                           }}
                         >
-                          Salin
+                          {copiedVa ? 'Tersalin! ✅' : 'Salin'}
                         </button>
                       </div>
                     </div>
@@ -1186,41 +1389,19 @@ export default function Billing() {
             <div className="card" style={styles.card}>
               <h3 style={styles.cardTitle}>Pembelian & Perpanjang Lisensi</h3>
               
-              {/* Product Type Toggle */}
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', borderBottom: '1px solid hsl(var(--border))', paddingBottom: '10px' }}>
+              {/* Product Type Toggle (Segmented Control) */}
+              <div style={styles.segmentedControl}>
                 <button
                   type="button"
                   onClick={() => setSelectedProduct('app')}
-                  style={{
-                    flex: 1,
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                    fontWeight: 'bold',
-                    backgroundColor: selectedProduct === 'app' ? 'hsl(var(--primary))' : 'transparent',
-                    color: selectedProduct === 'app' ? 'white' : 'hsl(var(--foreground))',
-                    border: '1px solid ' + (selectedProduct === 'app' ? 'hsl(var(--primary))' : 'hsl(var(--border))'),
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
+                  style={styles.segmentButton(selectedProduct === 'app')}
                 >
                   🌙 Aplikasi Mustahiq Care
                 </button>
                 <button
                   type="button"
                   onClick={() => setSelectedProduct('vpn')}
-                  style={{
-                    flex: 1,
-                    padding: '8px 12px',
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                    fontWeight: 'bold',
-                    backgroundColor: selectedProduct === 'vpn' ? 'hsl(var(--primary))' : 'transparent',
-                    color: selectedProduct === 'vpn' ? 'white' : 'hsl(var(--foreground))',
-                    border: '1px solid ' + (selectedProduct === 'vpn' ? 'hsl(var(--primary))' : 'hsl(var(--border))'),
-                    cursor: 'pointer',
-                    transition: 'all 0.2s'
-                  }}
+                  style={styles.segmentButton(selectedProduct === 'vpn')}
                 >
                   🌐 Online Gateway (VPN)
                 </button>
@@ -1248,32 +1429,61 @@ export default function Billing() {
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Pilih Paket Lisensi *</label>
                   <div style={styles.packagesList}>
-                    {packages.map(pkg => (
-                      <label 
-                        key={pkg.id} 
-                        style={styles.packageOption(selectedPackage === pkg.id, pkg.id)}
-                        onClick={() => setSelectedPackage(pkg.id)}
-                      >
-                        <input
-                          type="radio"
-                          name="package"
-                          value={pkg.id}
-                          checked={selectedPackage === pkg.id}
-                          onChange={() => {}}
-                          style={{ display: 'none' }}
-                        />
-                        <div style={styles.pkgTitle}>{pkg.title}</div>
-                        <div style={styles.pkgPrice}>{formatPrice(pkg.price)}</div>
-                        <div style={styles.pkgFeatures}>
-                          <div style={styles.pkgFeatureItem}>
-                            👥 {getLimitInfo(pkg).mustahiq}
+                    {packages.map(pkg => {
+                      const isSelected = selectedPackage === pkg.id;
+                      const isPopular = pkg.id?.includes('pro') || pkg.id?.includes('semester');
+                      return (
+                        <label 
+                          key={pkg.id} 
+                          style={{
+                            ...styles.packageOption(isSelected, pkg.id),
+                            transform: hoveredCard === pkg.id ? 'translateY(-2px)' : 'none',
+                            boxShadow: isSelected 
+                              ? '0 10px 15px -3px rgba(16, 185, 129, 0.12)' 
+                              : (hoveredCard === pkg.id ? '0 8px 12px -3px rgba(0, 0, 0, 0.05)' : 'none')
+                          }}
+                          onClick={() => setSelectedPackage(pkg.id)}
+                          onMouseEnter={() => setHoveredCard(pkg.id)}
+                          onMouseLeave={() => setHoveredCard(null)}
+                        >
+                          <input
+                            type="radio"
+                            name="package"
+                            value={pkg.id}
+                            checked={isSelected}
+                            onChange={() => {}}
+                            style={{ display: 'none' }}
+                          />
+                          {isPopular && (
+                            <span style={{
+                              position: 'absolute',
+                              top: '12px',
+                              right: '12px',
+                              backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                              border: '1px solid rgba(245, 158, 11, 0.3)',
+                              color: '#f59e0b',
+                              fontSize: '8px',
+                              fontWeight: '900',
+                              padding: '2px 6px',
+                              borderRadius: '20px',
+                              letterSpacing: '0.5px',
+                            }}>
+                              REKOMENDASI
+                            </span>
+                          )}
+                          <div style={styles.pkgTitle}>{pkg.title}</div>
+                          <div style={styles.pkgPrice}>{formatPrice(pkg.price)}</div>
+                          <div style={styles.pkgFeatures}>
+                            <div style={styles.pkgFeatureItem}>
+                              👥 {getLimitInfo(pkg).mustahiq}
+                            </div>
+                            <div style={styles.pkgFeatureItem}>
+                              💾 {getLimitInfo(pkg).storage}
+                            </div>
                           </div>
-                          <div style={styles.pkgFeatureItem}>
-                            💾 {getLimitInfo(pkg).storage}
-                          </div>
-                        </div>
-                      </label>
-                    ))}
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -1344,6 +1554,70 @@ const styles = {
     fontSize: '13px',
     color: 'hsl(var(--muted-foreground))',
     marginTop: '4px',
+  },
+  statsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+    gap: '16px',
+    marginBottom: '8px',
+  },
+  statsCard: {
+    backgroundColor: 'hsl(var(--card))',
+    border: '1px solid hsl(var(--border))',
+    borderRadius: '12px',
+    padding: '16px 20px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
+    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+    cursor: 'default',
+  },
+  statsIconWrapper: (variant) => {
+    let bg = 'rgba(107, 114, 128, 0.1)';
+    let color = 'hsl(var(--muted-foreground))';
+    if (variant === 'emerald') {
+      bg = 'rgba(16, 185, 129, 0.12)';
+      color = 'hsl(var(--primary))';
+    } else if (variant === 'amber') {
+      bg = 'rgba(245, 158, 11, 0.12)';
+      color = '#f59e0b';
+    } else if (variant === 'blue') {
+      bg = 'rgba(59, 130, 246, 0.12)';
+      color = '#3b82f6';
+    }
+    return {
+      width: '44px',
+      height: '44px',
+      borderRadius: '10px',
+      backgroundColor: bg,
+      color: color,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    };
+  },
+  statsInfo: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+  },
+  statsLabel: {
+    fontSize: '10px',
+    fontWeight: '700',
+    color: 'hsl(var(--muted-foreground))',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+  statsValue: {
+    fontSize: '18px',
+    fontWeight: '800',
+    color: 'hsl(var(--foreground))',
+    lineHeight: '1.2',
+  },
+  statsDesc: {
+    fontSize: '11px',
+    color: 'hsl(var(--muted-foreground))',
   },
   contentLayout: {
     display: 'grid',
@@ -1553,6 +1827,22 @@ const styles = {
     height: '100%',
     objectFit: 'contain',
   },
+  qrActions: {
+    display: 'flex',
+    gap: '10px',
+    marginTop: '12px',
+    width: '100%',
+    maxWidth: '240px',
+  },
+  qrActionBtn: {
+    flex: 1,
+    padding: '8px 12px',
+    fontSize: '11px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '4px',
+  },
   payCodeContainer: {
     width: '100%',
     display: 'flex',
@@ -1617,43 +1907,71 @@ const styles = {
   packagesList: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
-    gap: '8px',
+    gap: '12px',
   },
-  packageOption: (isSelected, pkgId = '') => ({
-    border: '2px solid ' + (isSelected ? 'hsl(var(--primary))' : 'hsl(var(--border))'),
-    borderRadius: '10px',
-    padding: '10px 12px',
+  segmentedControl: {
+    display: 'flex',
+    backgroundColor: 'rgba(0, 0, 0, 0.03)',
+    borderRadius: '12px',
+    padding: '4px',
+    marginBottom: '20px',
+    border: '1px solid hsl(var(--border))',
+  },
+  segmentButton: (isActive) => ({
+    flex: 1,
+    padding: '10px 16px',
+    borderRadius: '8px',
+    fontSize: '12.5px',
+    fontWeight: '700',
+    backgroundColor: isActive ? 'hsl(var(--card))' : 'transparent',
+    color: isActive ? 'hsl(var(--primary))' : 'hsl(var(--muted-foreground))',
+    border: 'none',
+    boxShadow: isActive ? '0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -1px rgba(0, 0, 0, 0.04)' : 'none',
     cursor: 'pointer',
-    backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.05)' : 'hsl(var(--card))',
-    transition: 'all 0.2s ease',
+    transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '6px',
+  }),
+  packageOption: (isSelected, pkgId = '') => ({
+    position: 'relative',
+    border: isSelected ? '2px solid hsl(var(--primary))' : '2px solid hsl(var(--border))',
+    borderRadius: '14px',
+    padding: '16px 18px',
+    cursor: 'pointer',
+    backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.03)' : 'hsl(var(--card))',
+    transition: 'all 0.25s ease',
     display: 'flex',
     flexDirection: 'column',
-    gap: '4px',
+    gap: '6px',
     gridColumn: (pkgId.includes('enterprise') || pkgId.includes('annual')) ? 'span 2' : 'span 1',
+    overflow: 'hidden',
   }),
   pkgTitle: {
-    fontWeight: '700',
-    fontSize: '12px',
+    fontWeight: '800',
+    fontSize: '13.5px',
+    color: 'hsl(var(--foreground))',
   },
   pkgPrice: {
-    fontSize: '13px',
-    fontWeight: '800',
+    fontSize: '15px',
+    fontWeight: '900',
     color: 'hsl(var(--primary))',
   },
   pkgFeatures: {
-    marginTop: '4px',
+    marginTop: '8px',
     borderTop: '1px solid hsl(var(--border))',
-    paddingTop: '4px',
+    paddingTop: '8px',
     display: 'flex',
     flexDirection: 'column',
-    gap: '3px',
+    gap: '6px',
   },
   pkgFeatureItem: {
-    fontSize: '10.5px',
+    fontSize: '11px',
     color: 'hsl(var(--muted-foreground))',
     display: 'flex',
     alignItems: 'center',
-    gap: '4px',
+    gap: '6px',
   },
   channelsGrid: {
     display: 'grid',
@@ -1892,10 +2210,12 @@ const styles = {
   },
   historyItem: {
     border: '1px solid hsl(var(--border))',
-    borderRadius: '8px',
-    padding: '12px',
+    borderRadius: '10px',
+    padding: '14px',
     backgroundColor: 'hsl(var(--card))',
-    marginBottom: '8px'
+    marginBottom: '8px',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+    transition: 'all 0.2s ease',
   },
   keyCode: {
     fontFamily: 'monospace',
