@@ -110,6 +110,12 @@ router.post('/', async (req, res) => {
     }
 
     const mustahiqData = req.body;
+    if (mustahiqData.nik === '' || mustahiqData.nik === undefined || mustahiqData.nik === null) {
+      mustahiqData.nik = null;
+    } else {
+      mustahiqData.nik = String(mustahiqData.nik).trim();
+      if (mustahiqData.nik === '') mustahiqData.nik = null;
+    }
     
     // Validate quota
     await validateQuota(req, tenantId, 1);
@@ -144,10 +150,20 @@ router.post('/import', async (req, res) => {
     // Validate quota
     await validateQuota(req, tenantId, payloads.length);
 
-    const dataWithTenant = payloads.map(p => ({
-      ...p,
-      tenant_id: tenantId
-    }));
+    const dataWithTenant = payloads.map(p => {
+      let nik = p.nik;
+      if (nik === '' || nik === undefined || nik === null) {
+        nik = null;
+      } else {
+        nik = String(nik).trim();
+        if (nik === '') nik = null;
+      }
+      return {
+        ...p,
+        nik,
+        tenant_id: tenantId
+      };
+    });
 
     // SQLite/Prisma createMany is supported
     const createRes = await prisma.mustahiq.createMany({
@@ -166,6 +182,12 @@ router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
+    if (updates.nik === '' || updates.nik === undefined || updates.nik === null) {
+      updates.nik = null;
+    } else {
+      updates.nik = String(updates.nik).trim();
+      if (updates.nik === '') updates.nik = null;
+    }
 
     const data = await prisma.mustahiq.update({
       where: { id },
@@ -628,8 +650,16 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
           statusVal = 'SURVEY';
         }
 
+        let parsedNik = null;
+        if (rawNik) {
+          const trimmedNik = String(rawNik).trim();
+          if (trimmedNik !== '') {
+            parsedNik = trimmedNik;
+          }
+        }
+
         payloads.push({
-          nik: rawNik ? String(rawNik).trim() : null,
+          nik: parsedNik,
           nama_lengkap: String(rawNama).trim(),
           kategori: String(rawKategori).trim().toUpperCase(),
           jenis_kelamin: genderVal,
