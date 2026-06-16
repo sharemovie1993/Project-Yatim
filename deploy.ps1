@@ -355,20 +355,14 @@ if ($usePM2) {
     $oldEAP = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
+        & pm2 delete ecosystem.config.js 2>&1 | Out-Null
         & pm2 delete "mustahiq-backend" 2>&1 | Out-Null
         & pm2 delete "mustahiq-frontend" 2>&1 | Out-Null
     } catch {}
     $ErrorActionPreference = $oldEAP
 
-    Write-Host "Memulai server backend di PM2..." -ForegroundColor Yellow
-    Push-Location backend
-    & pm2 start src/server.js --name "mustahiq-backend" --cwd "$PSScriptRoot\backend"
-    Pop-Location
-
-    Write-Host "Memulai server frontend (Vite Preview) di PM2..." -ForegroundColor Yellow
-    Push-Location frontend
-    & pm2 start node_modules/vite/bin/vite.js --name "mustahiq-frontend" --cwd "$PSScriptRoot\frontend" '--' preview --port $frontendPort --host 0.0.0.0
-    Pop-Location
+    Write-Host "Memulai layanan aplikasi di PM2 via Ecosystem..." -ForegroundColor Yellow
+    & pm2 start ecosystem.config.js
 
     & pm2 save
     Write-Host "Layanan sukses didaftarkan dan dijalankan di PM2!" -ForegroundColor Green

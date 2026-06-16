@@ -149,18 +149,10 @@ while true; do
             fi
 
             echo -e "${YELLOW}Menghentikan proses PM2 lama jika ada...${NC}"
-            pm2 delete "mustahiq-backend" 2>/dev/null || true
-            pm2 delete "mustahiq-frontend" 2>/dev/null || true
+            pm2 delete ecosystem.config.js 2>/dev/null || pm2 delete "mustahiq-backend" "mustahiq-frontend" 2>/dev/null || true
 
-            echo -e "\n${YELLOW}Memulai server backend...${NC}"
-            cd backend
-            pm2 start src/server.js --name "mustahiq-backend" --cwd "$PWD"
-            cd ..
-
-            echo -e "\n${YELLOW}Memulai server frontend (Vite Preview)...${NC}"
-            cd frontend
-            pm2 start node_modules/vite/bin/vite.js --name "mustahiq-frontend" --cwd "$PWD" -- preview --port $frontend_port --host 0.0.0.0
-            cd ..
+            echo -e "\n${YELLOW}Memulai layanan aplikasi via PM2 Ecosystem...${NC}"
+            pm2 start ecosystem.config.js
 
             pm2 save
             echo -e "\n${GREEN}Layanan Project Yatim sukses berjalan di PM2!${NC}"
