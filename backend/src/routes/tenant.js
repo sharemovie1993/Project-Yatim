@@ -118,6 +118,20 @@ router.put('/profile', async (req, res) => {
       }
     });
 
+    res.json({
+      success: true,
+      data: {
+        id: updated.id,
+        name: updated.name,
+        settings: mergedSettings
+      }
+    });
+  } catch (error) {
+    console.error('[PUT Tenant Profile Error]', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 // POST /api/v1/tenant/profile/upload
 router.post('/profile/upload', upload.single('file'), (req, res) => {
   try {
