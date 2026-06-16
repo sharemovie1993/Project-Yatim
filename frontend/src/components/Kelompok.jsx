@@ -4,6 +4,7 @@ import ApiService from '../services/api';
 export default function Kelompok() {
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [singleGroupRestriction, setSingleGroupRestriction] = useState(false);
   
   // Unified Group Modal state (for Add & Edit)
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -27,8 +28,13 @@ export default function Kelompok() {
     try {
       const res = await ApiService.getKelompok();
       setGroups(res.data || []);
+
+      // Load single group restriction rule from tenant profile settings
+      const profile = await ApiService.getTenantProfile();
+      const isRestricted = profile.data?.settings?.rules?.single_group_restriction === true;
+      setSingleGroupRestriction(isRestricted);
     } catch (e) {
-      console.error('Failed to load kelompok:', e);
+      console.error('Failed to load kelompok/tenant settings:', e);
     } finally {
       setLoading(false);
     }
@@ -147,8 +153,15 @@ export default function Kelompok() {
   // Filter out mustahiqs who are already members
   const availableMustahiqs = allMustahiqs.filter(m => {
     const isMember = members.some(mem => mem.id === m.id);
+
+    // If single group restriction is active, check if they belong to any group (m.anggota is not empty)
+    let isMemberOfAnyOtherGroup = false;
+    if (singleGroupRestriction) {
+      isMemberOfAnyOtherGroup = m.anggota && m.anggota.length > 0;
+    }
+
     const matchSearch = (m.nama_lengkap || '').toLowerCase().includes(memberSearch.toLowerCase());
-    return !isMember && matchSearch;
+    return !isMember && !isMemberOfAnyOtherGroup && matchSearch;
   });
 
   // Calculate statistics
@@ -309,15 +322,38 @@ export default function Kelompok() {
                   {availableMustahiqs.length === 0 ? (
                     <p style={styles.emptyText}>Tidak ada mustahiq aktif yang tersedia.</p>
                   ) : (
-                    availableMustahiqs.map(m => (
-                      <div key={m.id} style={styles.memberItem}>
-                        <div>
-                          <p style={styles.memberName}>{m.nama_lengkap}</p>
-                          <span style={styles.memberTag}>{m.kategori}</span>
+                    availableMustahiqs.map(m => {
+                      const otherGroups = m.anggota && m.anggota.length > 0
+                        ? m.anggota.map(a => a.kelompok?.nama_kelompok).filter(Boolean).join(', ')
+                        : null;
+                      return (
+                        <div key={m.id} style={styles.memberItem}>
+                          <div>
+                            <p style={styles.memberName}>{m.nama_lengkap}</p>
+                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap' }}>
+                              <span style={styles.memberTag}>{m.kategori}</span>
+                              {otherGroups && (
+                                <span style={{
+                                  fontSize: '10px',
+                                  backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                                  border: '1px solid rgba(245, 158, 11, 0.25)',
+                                  color: '#f59e0b',
+                                  padding: '1px 6px',
+                                  borderRadius: '4px',
+                                  fontWeight: '700',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '3px'
+                                }}>
+                                  📌 {otherGroups}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <button className="btn btn-primary" style={styles.addBtn} onClick={() => handleAddMember(m.id)}>➕ Tambah</button>
                         </div>
-                        <button className="btn btn-primary" style={styles.addBtn} onClick={() => handleAddMember(m.id)}>➕ Tambah</button>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>

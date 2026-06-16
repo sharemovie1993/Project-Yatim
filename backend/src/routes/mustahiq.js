@@ -25,6 +25,13 @@ router.get('/', async (req, res) => {
 
     const data = await prisma.mustahiq.findMany({
       where,
+      include: {
+        anggota: {
+          include: {
+            kelompok: true
+          }
+        }
+      },
       orderBy: { nama_lengkap: 'asc' }
     });
 

@@ -19,6 +19,7 @@ export default function Profile() {
   const [rules, setRules] = useState({
     max_age_yatim: 15,
     whatsapp_admin: '',
+    single_group_restriction: false,
   });
 
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -46,6 +47,7 @@ export default function Profile() {
         setRules({
           max_age_yatim: settings.rules.max_age_yatim || 15,
           whatsapp_admin: settings.rules.whatsapp_admin || '',
+          single_group_restriction: settings.rules.single_group_restriction || false,
         });
       }
     } catch (e) {
@@ -344,6 +346,19 @@ export default function Profile() {
                   value={rules.whatsapp_admin}
                   onChange={(e) => setRules({ ...rules, whatsapp_admin: e.target.value })}
                 />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Batasan Keanggotaan Kelompok Distribusi</label>
+                <select 
+                  className="input" 
+                  value={rules.single_group_restriction ? 'single' : 'multiple'}
+                  onChange={(e) => setRules({ ...rules, single_group_restriction: e.target.value === 'single' })}
+                  style={{ backgroundColor: 'hsl(var(--background))' }}
+                >
+                  <option value="multiple">Bebas (Satu mustahiq bisa bergabung ke banyak kelompok)</option>
+                  <option value="single">Terbatas (Satu mustahiq hanya boleh bergabung ke 1 kelompok saja)</option>
+                </select>
               </div>
             </div>
           </div>

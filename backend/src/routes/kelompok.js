@@ -138,6 +138,37 @@ router.post('/:kelompokId/anggota', async (req, res) => {
       return res.status(400).json({ success: false, error: 'mustahiqIds must be a non-empty array.' });
     }
 
+    // Load tenant settings to verify single group restriction rule
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    let settings = {};
+    try {
+      settings = JSON.parse(tenant?.settings || '{}');
+    } catch (e) {
+      settings = {};
+    }
+
+    if (settings.rules?.single_group_restriction === true) {
+      const existingMemberships = await prisma.anggotaKelompok.findMany({
+        where: {
+          tenant_id: tenantId,
+          mustahiq_id: { in: mustahiqIds },
+          NOT: { kelompok_id: kelompokId }
+        },
+        include: {
+          mustahiq: { select: { nama_lengkap: true } },
+          kelompok: { select: { nama_kelompok: true } }
+        }
+      });
+
+      if (existingMemberships.length > 0) {
+        const names = existingMemberships.map(m => `${m.mustahiq.nama_lengkap} (di kelompok ${m.kelompok.nama_kelompok})`).join(', ');
+        return res.status(400).json({ 
+          success: false, 
+          error: `Gagal menambahkan anggota. Mustahiq berikut sudah terdaftar di kelompok lain: ${names}` 
+        });
+      }
+    }
+
     const payloads = mustahiqIds.map(mid => ({
       kelompok_id: kelompokId,
       mustahiq_id: mid,
