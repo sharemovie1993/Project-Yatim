@@ -114,6 +114,11 @@ class ApiService {
     return `${BASE_URL}/v1/mustahiq/export?tenant_id=${tenantId}`;
   }
 
+  static getTemplateExcelUrl() {
+    const tenantId = this.getTenantId();
+    return `${BASE_URL}/v1/mustahiq/template?tenant_id=${tenantId}`;
+  }
+
   static async importExcel(fileBufferOrBlob) {
     const token = this.getToken();
     const tenantId = this.getTenantId();

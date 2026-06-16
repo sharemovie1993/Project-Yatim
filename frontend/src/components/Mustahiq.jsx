@@ -29,6 +29,10 @@ export default function Mustahiq() {
     catatan: '',
   });
 
+  // Profile Detail Modal state
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [detailMustahiq, setDetailMustahiq] = useState(null);
+
   // Excel Upload state
   const [showImportModal, setShowImportModal] = useState(false);
   const [excelFile, setExcelFile] = useState(null);
@@ -90,6 +94,11 @@ export default function Mustahiq() {
     setShowModal(true);
   };
 
+  const handleOpenDetail = (m) => {
+    setDetailMustahiq(m);
+    setShowDetailModal(true);
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     try {
@@ -124,6 +133,11 @@ export default function Mustahiq() {
     window.open(url, '_blank');
   };
 
+  const handleDownloadTemplate = () => {
+    const url = ApiService.getTemplateExcelUrl();
+    window.open(url, '_blank');
+  };
+
   const handleImportExcel = async (e) => {
     e.preventDefault();
     if (!excelFile) return alert('Silakan pilih file Excel.');
@@ -144,12 +158,18 @@ export default function Mustahiq() {
 
   // Local Filter logic
   const filteredMustahiqs = mustahiqs.filter(m => {
-    const matchSearch = m.nama_lengkap.toLowerCase().includes(search.toLowerCase()) || 
+    const matchSearch = (m.nama_lengkap || '').toLowerCase().includes(search.toLowerCase()) || 
                         (m.nik && m.nik.includes(search));
     const matchKat = filterKategori ? m.kategori === filterKategori : true;
     const matchStat = filterStatus ? m.status === filterStatus : true;
     return matchSearch && matchKat && matchStat;
   });
+
+  // Calculate statistics
+  const totalCount = mustahiqs.length;
+  const activeCount = mustahiqs.filter(m => m.status === 'AKTIF').length;
+  const surveyCount = mustahiqs.filter(m => m.status === 'SURVEY').length;
+  const inactiveCount = mustahiqs.filter(m => m.status === 'TIDAK_AKTIF').length;
 
   return (
     <div style={styles.container}>
@@ -162,6 +182,34 @@ export default function Mustahiq() {
           <button className="btn btn-outline" onClick={handleExportExcel}>📥 Ekspor Excel</button>
           <button className="btn btn-outline" onClick={() => setShowImportModal(true)}>📤 Impor Excel</button>
           <button className="btn btn-primary" onClick={handleOpenAdd}>➕ Tambah Mustahiq</button>
+        </div>
+      </div>
+
+      {/* Stats Summary Panel */}
+      <div style={styles.statsRow}>
+        <div className="card glass" style={styles.miniStatCard}>
+          <span style={styles.miniStatLabel}>Total Mustahiq</span>
+          <h3 style={styles.miniStatVal}>
+            {totalCount} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>jiwa</span>
+          </h3>
+        </div>
+        <div className="card glass" style={{ ...styles.miniStatCard, borderLeft: '4px solid hsl(var(--primary))' }}>
+          <span style={styles.miniStatLabel}>🟢 Status Aktif</span>
+          <h3 style={{ ...styles.miniStatVal, color: 'hsl(var(--primary))' }}>
+            {activeCount} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>jiwa</span>
+          </h3>
+        </div>
+        <div className="card glass" style={{ ...styles.miniStatCard, borderLeft: '4px solid hsl(var(--accent))' }}>
+          <span style={styles.miniStatLabel}>🟡 Dalam Survey</span>
+          <h3 style={{ ...styles.miniStatVal, color: 'hsl(var(--accent))' }}>
+            {surveyCount} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>jiwa</span>
+          </h3>
+        </div>
+        <div className="card glass" style={{ ...styles.miniStatCard, borderLeft: '4px solid #ef4444' }}>
+          <span style={styles.miniStatLabel}>🔴 Tidak Aktif</span>
+          <h3 style={{ ...styles.miniStatVal, color: '#ef4444' }}>
+            {inactiveCount} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>jiwa</span>
+          </h3>
         </div>
       </div>
 
@@ -213,8 +261,8 @@ export default function Mustahiq() {
                   <th style={styles.th}>NIK</th>
                   <th style={styles.th}>Nama Lengkap</th>
                   <th style={styles.th}>Kategori</th>
+                  <th style={styles.th}>Gender</th>
                   <th style={styles.th}>No Telepon</th>
-                  <th style={styles.th}>Alamat</th>
                   <th style={styles.th}>Status</th>
                   <th style={styles.th}>Aksi</th>
                 </tr>
@@ -225,15 +273,18 @@ export default function Mustahiq() {
                     <td style={styles.td}>{m.nik || '-'}</td>
                     <td style={{ ...styles.td, fontWeight: '600' }}>{m.nama_lengkap}</td>
                     <td style={styles.td}><span style={styles.tagKategori}>{m.kategori}</span></td>
+                    <td style={styles.td}>
+                      {m.jenis_kelamin === 'LAKI_LAKI' ? 'Laki-laki' : (m.jenis_kelamin === 'PEREMPUAN' ? 'Perempuan' : '-')}
+                    </td>
                     <td style={styles.td}>{m.no_telepon || '-'}</td>
-                    <td style={styles.td}>{m.alamat_lengkap}</td>
                     <td style={styles.td}>
                       <span style={styles.badgeStatus(m.status)}>{m.status}</span>
                     </td>
                     <td style={styles.td}>
                       <div style={styles.actionGroup}>
-                        <button className="btn btn-outline" style={styles.actionBtn} onClick={() => handleOpenEdit(m)}>✏️</button>
-                        <button className="btn btn-outline" style={{ ...styles.actionBtn, color: '#ef4444' }} onClick={() => handleDelete(m.id)}>🗑️</button>
+                        <button className="btn btn-outline" style={styles.actionBtn} title="Lihat Detail" onClick={() => handleOpenDetail(m)}>👁️</button>
+                        <button className="btn btn-outline" style={styles.actionBtn} title="Ubah Data" onClick={() => handleOpenEdit(m)}>✏️</button>
+                        <button className="btn btn-outline" style={{ ...styles.actionBtn, color: '#ef4444' }} title="Hapus Data" onClick={() => handleDelete(m.id)}>🗑️</button>
                       </div>
                     </td>
                   </tr>
@@ -284,6 +335,29 @@ export default function Mustahiq() {
                     <option key={c.id} value={c.nama_kategori}>{c.nama_kategori}</option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label style={styles.label}>Jenis Kelamin *</label>
+                <select
+                  className="input"
+                  value={formData.jenis_kelamin}
+                  onChange={(e) => setFormData({ ...formData, jenis_kelamin: e.target.value })}
+                  required
+                >
+                  <option value="LAKI_LAKI">Laki-laki</option>
+                  <option value="PEREMPUAN">Perempuan</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={styles.label}>Tanggal Lahir</label>
+                <input
+                  type="date"
+                  className="input"
+                  value={formData.tanggal_lahir}
+                  onChange={(e) => setFormData({ ...formData, tanggal_lahir: e.target.value })}
+                />
               </div>
 
               <div>
@@ -361,6 +435,82 @@ export default function Mustahiq() {
         </div>
       )}
 
+      {/* Read-Only Profile Detail Modal */}
+      {showDetailModal && detailMustahiq && (
+        <div style={styles.modalOverlay}>
+          <div className="card" style={styles.modalContent}>
+            <h3 style={styles.modalTitle}>Detail Profil Penerima Manfaat</h3>
+            <p style={styles.modalDesc}>Informasi lengkap data mustahiq terdaftar</p>
+            
+            <div style={styles.detailGrid}>
+              <div style={styles.detailSection}>
+                <h4 style={styles.detailSectionTitle}>Data Identitas</h4>
+                <div style={styles.detailRow}>
+                  <span style={styles.detailRowLabel}>NIK:</span>
+                  <strong>{detailMustahiq.nik || '-'}</strong>
+                </div>
+                <div style={styles.detailRow}>
+                  <span style={styles.detailRowLabel}>Nama Lengkap:</span>
+                  <strong>{detailMustahiq.nama_lengkap}</strong>
+                </div>
+                <div style={styles.detailRow}>
+                  <span style={styles.detailRowLabel}>Jenis Kelamin:</span>
+                  <strong>{detailMustahiq.jenis_kelamin === 'LAKI_LAKI' ? 'Laki-laki' : (detailMustahiq.jenis_kelamin === 'PEREMPUAN' ? 'Perempuan' : '-')}</strong>
+                </div>
+                <div style={styles.detailRow}>
+                  <span style={styles.detailRowLabel}>Tanggal Lahir:</span>
+                  <strong>{detailMustahiq.tanggal_lahir ? new Date(detailMustahiq.tanggal_lahir).toLocaleDateString('id-ID', { dateStyle: 'medium' }) : '-'}</strong>
+                </div>
+              </div>
+
+              <div style={styles.detailSection}>
+                <h4 style={styles.detailSectionTitle}>Kontak & Domisili</h4>
+                <div style={styles.detailRow}>
+                  <span style={styles.detailRowLabel}>Nomor Telepon:</span>
+                  <strong>{detailMustahiq.no_telepon || '-'}</strong>
+                </div>
+                <div style={styles.detailRow}>
+                  <span style={styles.detailRowLabel}>Alamat Lengkap:</span>
+                  <strong>{detailMustahiq.alamat_lengkap}</strong>
+                </div>
+              </div>
+
+              <div style={styles.detailSection}>
+                <h4 style={styles.detailSectionTitle}>Hubungan Sosial & Pendukung</h4>
+                <div style={styles.detailRow}>
+                  <span style={styles.detailRowLabel}>Nama Wali:</span>
+                  <strong>{detailMustahiq.nama_wali || '-'}</strong>
+                </div>
+                <div style={styles.detailRow}>
+                  <span style={styles.detailRowLabel}>Orang Tua Asuh:</span>
+                  <strong>{detailMustahiq.orang_tua_asuh || '-'}</strong>
+                </div>
+              </div>
+
+              <div style={styles.detailSection}>
+                <h4 style={styles.detailSectionTitle}>Status Kelayakan & Catatan</h4>
+                <div style={styles.detailRow}>
+                  <span style={styles.detailRowLabel}>Kategori Asnaf:</span>
+                  <strong><span style={styles.tagKategori}>{detailMustahiq.kategori}</span></strong>
+                </div>
+                <div style={styles.detailRow}>
+                  <span style={styles.detailRowLabel}>Status Kelayakan:</span>
+                  <strong><span style={styles.badgeStatus(detailMustahiq.status)}>{detailMustahiq.status}</span></strong>
+                </div>
+                <div style={styles.detailRow}>
+                  <span style={styles.detailRowLabel}>Catatan Surveyor:</span>
+                  <strong>{detailMustahiq.catatan || '-'}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ ...styles.colSpan, ...styles.modalFooter }}>
+              <button type="button" className="btn btn-primary" onClick={() => setShowDetailModal(false)}>Tutup Detail</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Excel Import Modal */}
       {showImportModal && (
         <div style={styles.modalOverlay}>
@@ -368,14 +518,35 @@ export default function Mustahiq() {
             <h3 style={styles.modalTitle}>Impor Data Mustahiq dari Excel</h3>
             <p style={styles.modalDesc}>Unggah file spreadsheet `.xlsx` berisi daftar mustahiq instansi Anda.</p>
             
+            <div style={styles.templateBox}>
+              <span style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))' }}>Gunakan template resmi agar format data tidak salah:</span>
+              <button type="button" className="btn btn-outline" style={{ marginTop: '8px', width: '100%', fontSize: '12px' }} onClick={handleDownloadTemplate}>
+                📥 Unduh Template Spreadsheet
+              </button>
+            </div>
+
             <form onSubmit={handleImportExcel} style={styles.importForm}>
-              <input
-                type="file"
-                accept=".xlsx, .xls"
-                onChange={(e) => setExcelFile(e.target.files[0])}
-                required
-                style={styles.fileInput}
-              />
+              <div>
+                <label style={styles.label}>Pilih File Excel (.xlsx)</label>
+                <input
+                  type="file"
+                  accept=".xlsx, .xls"
+                  onChange={(e) => setExcelFile(e.target.files[0])}
+                  required
+                  style={styles.fileInput}
+                />
+              </div>
+
+              <div style={styles.instructionsList}>
+                <span style={{ fontWeight: '600', fontSize: '11px', color: 'hsl(var(--foreground))' }}>Aturan Pengisian Data:</span>
+                <ul style={{ margin: '4px 0 0 16px', padding: 0, fontSize: '11px', color: 'hsl(var(--muted-foreground))', lineHeight: '1.4' }}>
+                  <li>Kolom NIK, Nama Lengkap, Kategori, Alamat Lengkap wajib terisi.</li>
+                  <li>Kolom NIK harus berupa 16 digit angka (ditulis sebagai teks di excel).</li>
+                  <li>Jenis Kelamin diisi <strong>L</strong> atau <strong>P</strong>.</li>
+                  <li>Status Kelayakan diisi: <strong>AKTIF</strong>, <strong>SURVEY</strong>, atau <strong>TIDAK_AKTIF</strong>.</li>
+                </ul>
+              </div>
+
               <div style={styles.modalFooter}>
                 <button type="button" className="btn btn-outline" onClick={() => setShowImportModal(false)}>Batal</button>
                 <button type="submit" className="btn btn-primary" disabled={uploading}>
@@ -415,6 +586,28 @@ const styles = {
   headerButtons: {
     display: 'flex',
     gap: '10px',
+  },
+  statsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '20px',
+    marginBottom: '8px',
+  },
+  miniStatCard: {
+    padding: '16px 20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  miniStatLabel: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+    fontWeight: '500',
+  },
+  miniStatVal: {
+    fontSize: '22px',
+    fontWeight: '800',
+    margin: 0,
   },
   toolbar: {
     display: 'flex',
@@ -464,6 +657,7 @@ const styles = {
   actionBtn: {
     padding: '6px 10px',
     fontSize: '12px',
+    cursor: 'pointer',
   },
   tagKategori: {
     backgroundColor: 'hsl(var(--muted))',
@@ -513,6 +707,8 @@ const styles = {
     width: '90%',
     maxWidth: '600px',
     padding: '24px 30px',
+    maxHeight: '90vh',
+    overflowY: 'auto',
   },
   smallModalContent: {
     width: '90%',
@@ -550,6 +746,63 @@ const styles = {
     gap: '10px',
     marginTop: '12px',
   },
+  detailGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '16px',
+    marginTop: '12px',
+    maxHeight: '400px',
+    overflowY: 'auto',
+    paddingRight: '8px',
+    marginBottom: '16px',
+  },
+  detailSection: {
+    border: '1px solid hsl(var(--border))',
+    borderRadius: '8px',
+    padding: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+    backgroundColor: 'rgba(255,255,255,0.02)',
+  },
+  detailSectionTitle: {
+    fontSize: '12px',
+    fontWeight: '700',
+    color: 'hsl(var(--primary))',
+    margin: '0 0 4px 0',
+    borderBottom: '1px solid hsl(var(--border))',
+    paddingBottom: '4px',
+  },
+  detailRow: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '2px',
+    fontSize: '12px',
+  },
+  detailRowLabel: {
+    color: 'hsl(var(--muted-foreground))',
+    fontSize: '11px',
+    fontWeight: '500',
+  },
+  templateBox: {
+    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    border: '1px solid rgba(16, 185, 129, 0.2)',
+    borderRadius: '8px',
+    padding: '12px',
+    marginBottom: '16px',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  instructionsList: {
+    backgroundColor: 'rgba(245, 158, 11, 0.05)',
+    border: '1px solid rgba(245, 158, 11, 0.2)',
+    borderRadius: '8px',
+    padding: '12px',
+    fontSize: '11px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
   importForm: {
     display: 'flex',
     flexDirection: 'column',
@@ -560,5 +813,6 @@ const styles = {
     border: '1px dashed hsl(var(--border))',
     borderRadius: '8px',
     cursor: 'pointer',
+    width: '100%',
   },
 };
