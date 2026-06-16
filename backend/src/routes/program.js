@@ -19,17 +19,75 @@ router.get('/', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
     }
 
-    const data = await prisma.programSantunan.findMany({
-      where: { tenant_id: tenantId },
-      include: {
-        _count: {
-          select: { penyaluran: true }
+    const { page, limit, paginate, search } = req.query;
+    const where = { tenant_id: tenantId };
+
+    if (search) {
+      where.nama_program = { contains: String(search).trim() };
+    }
+
+    // Overall stats for programs
+    const [totalPrograms, allProgramsBudget] = await Promise.all([
+      prisma.programSantunan.count({ where: { tenant_id: tenantId } }),
+      prisma.programSantunan.findMany({
+        where: { tenant_id: tenantId },
+        select: { total_anggaran: true }
+      })
+    ]);
+
+    const sumBudget = allProgramsBudget.reduce((acc, row) => acc + (row.total_anggaran || 0), 0);
+    const avgBudget = totalPrograms > 0 ? (sumBudget / totalPrograms).toFixed(0) : 0;
+
+    const stats = {
+      total: totalPrograms,
+      budget: sumBudget,
+      average: avgBudget
+    };
+
+    const isPaginated = paginate === 'true' || page !== undefined;
+
+    if (isPaginated) {
+      const pageNum = parseInt(page, 10) || 1;
+      const limitNum = parseInt(limit, 10) || 10;
+      const skipNum = (pageNum - 1) * limitNum;
+
+      const totalItems = await prisma.programSantunan.count({ where });
+      const data = await prisma.programSantunan.findMany({
+        where,
+        skip: skipNum,
+        take: limitNum,
+        include: {
+          _count: {
+            select: { penyaluran: true }
+          }
+        },
+        orderBy: { tanggal_pelaksanaan: 'desc' }
+      });
+
+      res.json({
+        success: true,
+        data,
+        stats,
+        pagination: {
+          totalItems,
+          totalPages: Math.ceil(totalItems / limitNum),
+          currentPage: pageNum,
+          limit: limitNum
         }
-      },
-      orderBy: { tanggal_pelaksanaan: 'desc' }
-    });
-    
-    res.json({ success: true, data });
+      });
+    } else {
+      const data = await prisma.programSantunan.findMany({
+        where,
+        include: {
+          _count: {
+            select: { penyaluran: true }
+          }
+        },
+        orderBy: { tanggal_pelaksanaan: 'desc' }
+      });
+
+      res.json({ success: true, data, stats });
+    }
   } catch (error) {
     console.error('[GET Program Error]', error);
     res.status(500).json({ success: false, error: error.message });
@@ -116,18 +174,98 @@ router.get('/:programId/penyaluran', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
     }
 
-    const data = await prisma.penyaluranSantunan.findMany({
-      where: {
-        program_id: programId,
-        tenant_id: tenantId
-      },
-      include: {
-        mustahiq: true,
-        kelompok: true
-      }
-    });
-    
-    res.json({ success: true, data });
+    const { page, limit, paginate, search, status } = req.query;
+    const where = {
+      program_id: programId,
+      tenant_id: tenantId
+    };
+
+    if (status) {
+      where.status = status;
+    }
+
+    if (search) {
+      const searchTrimmed = String(search).trim();
+      where.mustahiq = {
+        nama_lengkap: { contains: searchTrimmed }
+      };
+    }
+
+    // Overall stats for this program's distributions
+    const [totalPenerima, allPenyaluran, totalTersalurkan, totalBelum, totalBatal] = await Promise.all([
+      prisma.penyaluranSantunan.count({ where: { program_id: programId, tenant_id: tenantId } }),
+      prisma.penyaluranSantunan.findMany({
+        where: { program_id: programId, tenant_id: tenantId },
+        select: { jumlah_diterima: true }
+      }),
+      prisma.penyaluranSantunan.count({ where: { program_id: programId, tenant_id: tenantId, status: 'TERSALURKAN' } }),
+      prisma.penyaluranSantunan.count({ where: { program_id: programId, tenant_id: tenantId, status: 'BELUM' } }),
+      prisma.penyaluranSantunan.count({ where: { program_id: programId, tenant_id: tenantId, status: 'BATAL' } })
+    ]);
+
+    const sumDana = allPenyaluran.reduce((acc, row) => {
+      const val = parseInt(String(row.jumlah_diterima || '').replace(/[^0-9]/g, ''), 10) || 0;
+      return acc + val;
+    }, 0);
+
+    const stats = {
+      total: totalPenerima,
+      dana: sumDana,
+      tersalurkan: totalTersalurkan,
+      belum: totalBelum,
+      batal: totalBatal
+    };
+
+    const isPaginated = paginate === 'true' || page !== undefined;
+
+    if (isPaginated) {
+      const pageNum = parseInt(page, 10) || 1;
+      const limitNum = parseInt(limit, 10) || 10;
+      const skipNum = (pageNum - 1) * limitNum;
+
+      const totalItems = await prisma.penyaluranSantunan.count({ where });
+      const data = await prisma.penyaluranSantunan.findMany({
+        where,
+        skip: skipNum,
+        take: limitNum,
+        include: {
+          mustahiq: true,
+          kelompok: true
+        },
+        orderBy: {
+          mustahiq: {
+            nama_lengkap: 'asc'
+          }
+        }
+      });
+
+      res.json({
+        success: true,
+        data,
+        stats,
+        pagination: {
+          totalItems,
+          totalPages: Math.ceil(totalItems / limitNum),
+          currentPage: pageNum,
+          limit: limitNum
+        }
+      });
+    } else {
+      const data = await prisma.penyaluranSantunan.findMany({
+        where,
+        include: {
+          mustahiq: true,
+          kelompok: true
+        },
+        orderBy: {
+          mustahiq: {
+            nama_lengkap: 'asc'
+          }
+        }
+      });
+
+      res.json({ success: true, data, stats });
+    }
   } catch (error) {
     console.error('[GET Penyaluran Error]', error);
     res.status(500).json({ success: false, error: error.message });

@@ -6,6 +6,14 @@ export default function Program() {
   const [kelompokList, setKelompokList] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Program Search & Pagination state
+  const [search, setSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [programStats, setProgramStats] = useState({ total: 0, budget: 0, average: 0 });
+
   // Add & Edit Program state
   const [showAddModal, setShowAddModal] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -18,11 +26,18 @@ export default function Program() {
     status: 'DRAFT',
   });
 
-  // Distribution detail state
+  // Distribution detail & pagination state
   const [selectedProgram, setSelectedProgram] = useState(null);
   const [penyaluranList, setPenyaluranList] = useState([]);
   const [showDistModal, setShowDistModal] = useState(false);
   const [recipientSearch, setRecipientSearch] = useState('');
+  const [distCurrentPage, setDistCurrentPage] = useState(1);
+  const [distPageSize, setDistPageSize] = useState(10);
+  const [distTotalPages, setDistTotalPages] = useState(1);
+  const [distTotalItems, setDistTotalItems] = useState(0);
+  const [distStatus, setDistStatus] = useState('');
+  const [distStats, setDistStats] = useState({ total: 0, dana: 0, tersalurkan: 0, belum: 0, batal: 0 });
+  const [existingMustahiqIds, setExistingMustahiqIds] = useState([]);
 
   // Add single mustahiq state
   const [selectedMustahiqId, setSelectedMustahiqId] = useState('');
@@ -34,14 +49,23 @@ export default function Program() {
   const [genKelompokId, setGenKelompokId] = useState('');
   const [genJumlah, setGenJumlah] = useState('Rp 150.000');
 
-  const loadData = async () => {
+  const loadData = async (page = currentPage, limit = pageSize) => {
     setLoading(true);
     try {
-      const res = await ApiService.getProgram();
+      const res = await ApiService.getProgram({
+        paginate: true,
+        page,
+        limit,
+        search
+      });
       setPrograms(res.data || []);
-      
-      const kel = await ApiService.getKelompok();
-      setKelompokList(kel.data || []);
+      if (res.pagination) {
+        setTotalPages(res.pagination.totalPages || 1);
+        setTotalItems(res.pagination.totalItems || 0);
+      }
+      if (res.stats) {
+        setProgramStats(res.stats);
+      }
     } catch (e) {
       console.error('Failed to load program data:', e);
     } finally {
@@ -49,9 +73,62 @@ export default function Program() {
     }
   };
 
+  const loadPenyaluranData = async (programId = selectedProgram?.id, page = distCurrentPage, limit = distPageSize) => {
+    if (!programId) return;
+    setLoading(true);
+    try {
+      const res = await ApiService.getPenyaluran(programId, {
+        paginate: true,
+        page,
+        limit,
+        search: recipientSearch,
+        status: distStatus
+      });
+      setPenyaluranList(res.data || []);
+      if (res.pagination) {
+        setDistTotalPages(res.pagination.totalPages || 1);
+        setDistTotalItems(res.pagination.totalItems || 0);
+      }
+      if (res.stats) {
+        setDistStats(res.stats);
+      }
+    } catch (e) {
+      console.error('Failed to load penyaluran data:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Load static configurations once on mount
   useEffect(() => {
-    loadData();
+    const loadConfig = async () => {
+      try {
+        const kel = await ApiService.getKelompok();
+        setKelompokList(kel.data || []);
+      } catch (e) {
+        console.error('Failed to load initial configurations:', e);
+      }
+    };
+    loadConfig();
   }, []);
+
+  // Fetch paginated programs whenever filter states or page states change
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      loadData(currentPage, pageSize);
+    }, 300); // Debounce search changes
+    return () => clearTimeout(handler);
+  }, [currentPage, pageSize, search]);
+
+  // Fetch paginated penyaluran whenever filter states or page states change
+  useEffect(() => {
+    if (showDistModal && selectedProgram) {
+      const handler = setTimeout(() => {
+        loadPenyaluranData(selectedProgram.id, distCurrentPage, distPageSize);
+      }, 300); // Debounce recipient search changes
+      return () => clearTimeout(handler);
+    }
+  }, [distCurrentPage, distPageSize, recipientSearch, distStatus, showDistModal, selectedProgram]);
 
   const handleOpenAdd = () => {
     setIsEdit(false);
@@ -120,9 +197,28 @@ export default function Program() {
     setSelectedProgram(p);
     setLoading(true);
     setRecipientSearch('');
+    setDistStatus('');
+    setDistCurrentPage(1);
     try {
-      const res = await ApiService.getPenyaluran(p.id);
+      const res = await ApiService.getPenyaluran(p.id, {
+        paginate: true,
+        page: 1,
+        limit: distPageSize,
+        search: '',
+        status: ''
+      });
       setPenyaluranList(res.data || []);
+      if (res.pagination) {
+        setDistTotalPages(res.pagination.totalPages || 1);
+        setDistTotalItems(res.pagination.totalItems || 0);
+      }
+      if (res.stats) {
+        setDistStats(res.stats);
+      }
+
+      // Fetch all recipient IDs in this program to avoid duplicates in modal list selection
+      const fullRes = await ApiService.getPenyaluran(p.id, { paginate: false });
+      setExistingMustahiqIds(fullRes.data?.map(py => py.mustahiq_id) || []);
       
       const mustRes = await ApiService.getMustahiq(true); // Active only
       setAllActiveMustahiqs(mustRes.data || []);
@@ -142,12 +238,12 @@ export default function Program() {
       const res = await ApiService.generatePenyaluranUntukKelompok(selectedProgram.id, genKelompokId, genJumlah);
       alert(`Berhasil generate ${res.count} rencana penyaluran untuk anggota kelompok.`);
       setShowGenModal(false);
-      // Reload distributions list
-      const dRes = await ApiService.getPenyaluran(selectedProgram.id);
-      setPenyaluranList(dRes.data || []);
-      // Reload programs to refresh target counts
-      const pRes = await ApiService.getProgram();
-      setPrograms(pRes.data || []);
+      
+      const fullRes = await ApiService.getPenyaluran(selectedProgram.id, { paginate: false });
+      setExistingMustahiqIds(fullRes.data?.map(py => py.mustahiq_id) || []);
+
+      loadPenyaluranData(selectedProgram.id);
+      loadData();
     } catch (err) {
       alert('Gagal memproses: ' + err.message);
     }
@@ -160,14 +256,13 @@ export default function Program() {
     try {
       await ApiService.addSinglePenyaluran(selectedProgram.id, selectedMustahiqId, singleJumlah.trim());
       alert('Mustahiq berhasil ditambahkan ke daftar penerima.');
+      
+      setExistingMustahiqIds(prev => [...prev, selectedMustahiqId]);
       setSelectedMustahiqId('');
       setSingleJumlah('Rp 150.000');
-      // Reload distributions list
-      const dRes = await ApiService.getPenyaluran(selectedProgram.id);
-      setPenyaluranList(dRes.data || []);
-      // Reload programs list to update counts
-      const pRes = await ApiService.getProgram();
-      setPrograms(pRes.data || []);
+      
+      loadPenyaluranData(selectedProgram.id);
+      loadData();
     } catch (err) {
       alert('Gagal menambahkan mustahiq: ' + err.message);
     }
@@ -176,14 +271,16 @@ export default function Program() {
   const handleDeleteRecipient = async (penyaluranId) => {
     if (!confirm('Keluarkan mustahiq dari daftar penerima program ini?')) return;
     try {
+      const pyToDelete = penyaluranList.find(p => p.id === penyaluranId);
       await ApiService.deletePenyaluran(penyaluranId);
       alert('Penerima berhasil dikeluarkan dari program.');
-      // Reload distributions list
-      const dRes = await ApiService.getPenyaluran(selectedProgram.id);
-      setPenyaluranList(dRes.data || []);
-      // Reload programs list to update counts
-      const pRes = await ApiService.getProgram();
-      setPrograms(pRes.data || []);
+      
+      if (pyToDelete) {
+        setExistingMustahiqIds(prev => prev.filter(id => id !== pyToDelete.mustahiq_id));
+      }
+
+      loadPenyaluranData(selectedProgram.id);
+      loadData();
     } catch (err) {
       alert('Gagal mengeluarkan penerima: ' + err.message);
     }
@@ -192,9 +289,7 @@ export default function Program() {
   const handleUpdateStatus = async (penyaluranId, status) => {
     try {
       await ApiService.updateStatusPenyaluran(penyaluranId, status);
-      // Reload distributions list
-      const dRes = await ApiService.getPenyaluran(selectedProgram.id);
-      setPenyaluranList(dRes.data || []);
+      loadPenyaluranData(selectedProgram.id);
     } catch (err) {
       alert('Gagal memperbarui status: ' + err.message);
     }
@@ -205,21 +300,16 @@ export default function Program() {
     window.open(url, '_blank');
   };
 
-  // Local Filter logic for recipients
-  const filteredPenyaluran = penyaluranList.filter(py => {
-    return (py.mustahiq?.nama_lengkap || '').toLowerCase().includes(recipientSearch.toLowerCase());
-  });
+  // Local Filter logic for recipients (handled server-side now, passed as-is)
+  const filteredPenyaluran = penyaluranList;
 
-  // Calculate statistics for distributions
-  const distTotalDana = penyaluranList.reduce((acc, py) => {
-    const val = parseInt((py.jumlah_diterima || '').replace(/[^0-9]/g, ''), 10) || 0;
-    return acc + val;
-  }, 0);
+  // Calculate statistics for distributions (fetched from server)
+  const distTotalDana = distStats.dana;
 
-  // Calculate stats for main page
-  const totalPrograms = programs.length;
-  const totalBudget = programs.reduce((acc, p) => acc + (p.total_anggaran || 0), 0);
-  const averageBudget = totalPrograms > 0 ? (totalBudget / totalPrograms).toFixed(0) : '0';
+  // Calculate stats for main page (fetched from server)
+  const totalPrograms = programStats.total;
+  const totalBudget = programStats.budget;
+  const averageBudget = programStats.average;
 
   return (
     <div style={styles.container}>
@@ -253,57 +343,162 @@ export default function Program() {
         </div>
       </div>
 
+      {/* Search Toolbar */}
+      <div className="card glass" style={{ ...styles.toolbar, padding: '16px', marginBottom: '8px' }}>
+        <input
+          type="text"
+          className="input"
+          placeholder="Cari nama program..."
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setCurrentPage(1);
+          }}
+          style={{ maxWidth: '300px' }}
+        />
+      </div>
+
       <div className="card" style={styles.tableCard}>
         {loading && !showDistModal && !showAddModal ? (
           <div style={styles.centerText}>Memuat data program...</div>
         ) : programs.length === 0 ? (
           <div style={styles.centerText}>Belum ada program dirancang.</div>
         ) : (
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr style={styles.thRow}>
-                  <th style={styles.th}>Nama Program</th>
-                  <th style={styles.th}>Tanggal Pelaksanaan</th>
-                  <th style={styles.th}>Jenis Bantuan</th>
-                  <th style={styles.th}>Total Anggaran</th>
-                  <th style={styles.th}>Target Penerima</th>
-                  <th style={styles.th}>Status</th>
-                  <th style={styles.th}>Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {programs.map((p) => (
-                  <tr key={p.id} style={styles.tr}>
-                    <td style={{ ...styles.td, fontWeight: '600' }}>{p.nama_program}</td>
-                    <td style={styles.td}>{p.tanggal_pelaksanaan}</td>
-                    <td style={styles.td}>{p.jenis}</td>
-                    <td style={styles.td}>Rp {(p.total_anggaran || 0).toLocaleString('id-ID')}</td>
-                    <td style={styles.td}>
-                      <span style={{ fontWeight: '600', color: 'hsl(var(--primary))' }}>
-                        {p._count?.penyaluran || 0}
-                      </span> jiwa
-                    </td>
-                    <td style={styles.td}>
-                      <span style={styles.statusBadge(p.status)}>{p.status}</span>
-                    </td>
-                    <td style={styles.td}>
-                      <div style={styles.actionGroup}>
-                        <button className="btn btn-outline" style={styles.iconBtn} title="Ubah Program" onClick={() => handleOpenEdit(p)}>✏️ Edit</button>
-                        <button className="btn btn-outline" style={{ ...styles.iconBtn, color: '#ef4444' }} title="Hapus Program" onClick={() => handleDeleteProgram(p.id)}>🗑️ Hapus</button>
-                        <button className="btn btn-primary" style={styles.actionBtn} onClick={() => handleOpenDistributions(p)}>
-                          📊 Distribusi
-                        </button>
-                        <button className="btn btn-outline" style={styles.actionBtn} onClick={() => handleDownloadPdf(p.id)}>
-                          🖨️ Cetak SPJ
-                        </button>
-                      </div>
-                    </td>
+          <>
+            <div style={styles.tableWrapper}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.thRow}>
+                    <th style={styles.th}>Nama Program</th>
+                    <th style={styles.th}>Tanggal Pelaksanaan</th>
+                    <th style={styles.th}>Jenis Bantuan</th>
+                    <th style={styles.th}>Total Anggaran</th>
+                    <th style={styles.th}>Target Penerima</th>
+                    <th style={styles.th}>Status</th>
+                    <th style={styles.th}>Aksi</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {programs.map((p) => (
+                    <tr key={p.id} style={styles.tr}>
+                      <td style={{ ...styles.td, fontWeight: '600' }}>{p.nama_program}</td>
+                      <td style={styles.td}>{p.tanggal_pelaksanaan}</td>
+                      <td style={styles.td}>{p.jenis}</td>
+                      <td style={styles.td}>Rp {(p.total_anggaran || 0).toLocaleString('id-ID')}</td>
+                      <td style={styles.td}>
+                        <span style={{ fontWeight: '600', color: 'hsl(var(--primary))' }}>
+                          {p._count?.penyaluran || 0}
+                        </span> jiwa
+                      </td>
+                      <td style={styles.td}>
+                        <span style={styles.statusBadge(p.status)}>{p.status}</span>
+                      </td>
+                      <td style={styles.td}>
+                        <div style={styles.actionGroup}>
+                          <button className="btn btn-outline" style={styles.iconBtn} title="Ubah Program" onClick={() => handleOpenEdit(p)}>✏️ Edit</button>
+                          <button className="btn btn-outline" style={{ ...styles.iconBtn, color: '#ef4444' }} title="Hapus Program" onClick={() => handleDeleteProgram(p.id)}>🗑️ Hapus</button>
+                          <button className="btn btn-primary" style={styles.actionBtn} onClick={() => handleOpenDistributions(p)}>
+                            📊 Distribusi
+                          </button>
+                          <button className="btn btn-outline" style={styles.actionBtn} onClick={() => handleDownloadPdf(p.id)}>
+                            🖨️ Cetak SPJ
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Program Pagination Controls */}
+            <div style={styles.paginationFooter}>
+              <div style={styles.paginationLimit}>
+                <span style={styles.paginationLabel}>Tampilkan:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(parseInt(e.target.value, 10));
+                    setCurrentPage(1);
+                  }}
+                  style={styles.pageSizeSelect}
+                >
+                  <option value={10}>10 Baris</option>
+                  <option value={25}>25 Baris</option>
+                  <option value={50}>50 Baris</option>
+                  <option value={100}>100 Baris</option>
+                </select>
+              </div>
+
+              <div style={styles.paginationInfo}>
+                Menampilkan <strong>{Math.min((currentPage - 1) * pageSize + 1, totalItems)}</strong> - <strong>{Math.min(currentPage * pageSize, totalItems)}</strong> dari <strong>{totalItems}</strong> data
+              </div>
+
+              <div style={styles.paginationNav}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: '6px 10px',
+                    opacity: currentPage === 1 ? 0.4 : 1,
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Halaman Pertama"
+                >
+                  ⏮️
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: '6px 10px',
+                    opacity: currentPage === 1 ? 0.4 : 1,
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Sebelumnya"
+                >
+                  ◀️
+                </button>
+                
+                <span style={styles.pageIndicator}>
+                  Halaman <strong>{currentPage}</strong> dari <strong>{totalPages}</strong>
+                </span>
+
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  style={{
+                    padding: '6px 10px',
+                    opacity: currentPage === totalPages ? 0.4 : 1,
+                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Selanjutnya"
+                >
+                  ▶️
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  style={{
+                    padding: '6px 10px',
+                    opacity: currentPage === totalPages ? 0.4 : 1,
+                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Halaman Terakhir"
+                >
+                  ⏭️
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 
@@ -405,28 +600,28 @@ export default function Program() {
             <div style={styles.modalStatsRow}>
               <div style={styles.modalStatCard}>
                 <span style={styles.modalStatLabel}>Total Penerima</span>
-                <span style={styles.modalStatVal}>{penyaluranList.length} jiwa</span>
+                <span style={styles.modalStatVal}>{distStats.total} jiwa</span>
               </div>
               <div style={styles.modalStatCard}>
                 <span style={styles.modalStatLabel}>Dana Rencana</span>
-                <span style={styles.modalStatVal}>Rp {distTotalDana.toLocaleString('id-ID')}</span>
+                <span style={styles.modalStatVal}>Rp {distStats.dana.toLocaleString('id-ID')}</span>
               </div>
               <div style={{ ...styles.modalStatCard, borderLeft: '3px solid hsl(var(--primary))' }}>
                 <span style={styles.modalStatLabel}>Tersalurkan</span>
                 <span style={{ ...styles.modalStatVal, color: 'hsl(var(--primary))' }}>
-                  {penyaluranList.filter(py => py.status === 'TERSALURKAN').length} jiwa
+                  {distStats.tersalurkan} jiwa
                 </span>
               </div>
               <div style={{ ...styles.modalStatCard, borderLeft: '3px solid hsl(var(--accent))' }}>
                 <span style={styles.modalStatLabel}>Belum Salur</span>
                 <span style={{ ...styles.modalStatVal, color: 'hsl(var(--accent))' }}>
-                  {penyaluranList.filter(py => py.status === 'BELUM').length} jiwa
+                  {distStats.belum} jiwa
                 </span>
               </div>
               <div style={{ ...styles.modalStatCard, borderLeft: '3px solid #ef4444' }}>
                 <span style={styles.modalStatLabel}>Batal</span>
                 <span style={{ ...styles.modalStatVal, color: '#ef4444' }}>
-                  {penyaluranList.filter(py => py.status === 'BATAL').length} jiwa
+                  {distStats.batal} jiwa
                 </span>
               </div>
             </div>
@@ -443,7 +638,7 @@ export default function Program() {
                 >
                   <option value="">-- Pilih Mustahiq Aktif --</option>
                   {allActiveMustahiqs
-                    .filter(m => !penyaluranList.some(py => py.mustahiq_id === m.id))
+                    .filter(m => !existingMustahiqIds.includes(m.id))
                     .map(m => (
                       <option key={m.id} value={m.id}>
                         {m.nama_lengkap} ({m.kategori})
@@ -471,14 +666,33 @@ export default function Program() {
             {/* Recipient Table Toolbar */}
             <div style={styles.toolbar}>
               <h4 style={{ margin: 0, fontWeight: '700', fontSize: '14px' }}>Daftar Penerima Manfaat</h4>
-              <input
-                type="text"
-                className="input"
-                placeholder="Cari nama penerima..."
-                value={recipientSearch}
-                onChange={(e) => setRecipientSearch(e.target.value)}
-                style={{ maxWidth: '250px', height: '34px', fontSize: '12px' }}
-              />
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <select
+                  className="input"
+                  value={distStatus}
+                  onChange={(e) => {
+                    setDistStatus(e.target.value);
+                    setDistCurrentPage(1);
+                  }}
+                  style={{ width: '130px', height: '34px', fontSize: '12px', padding: '0 8px' }}
+                >
+                  <option value="">Semua Status</option>
+                  <option value="BELUM">BELUM</option>
+                  <option value="TERSALURKAN">TERSALURKAN</option>
+                  <option value="BATAL">BATAL</option>
+                </select>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Cari nama penerima..."
+                  value={recipientSearch}
+                  onChange={(e) => {
+                    setRecipientSearch(e.target.value);
+                    setDistCurrentPage(1);
+                  }}
+                  style={{ maxWidth: '200px', height: '34px', fontSize: '12px' }}
+                />
+              </div>
             </div>
 
             <div style={styles.tableWrapperModal}>
@@ -543,6 +757,93 @@ export default function Program() {
                   </tbody>
                 </table>
               )}
+            </div>
+
+            {/* Modal Pagination Footer */}
+            <div style={styles.paginationFooter}>
+              <div style={styles.paginationLimit}>
+                <span style={styles.paginationLabel}>Tampilkan:</span>
+                <select
+                  value={distPageSize}
+                  onChange={(e) => {
+                    setDistPageSize(parseInt(e.target.value, 10));
+                    setDistCurrentPage(1);
+                  }}
+                  style={styles.pageSizeSelect}
+                >
+                  <option value={10}>10 Baris</option>
+                  <option value={25}>25 Baris</option>
+                  <option value={50}>50 Baris</option>
+                </select>
+              </div>
+
+              <div style={styles.paginationInfo}>
+                Menampilkan <strong>{Math.min((distCurrentPage - 1) * distPageSize + 1, distTotalItems)}</strong> - <strong>{Math.min(distCurrentPage * distPageSize, distTotalItems)}</strong> dari <strong>{distTotalItems}</strong> data
+              </div>
+
+              <div style={styles.paginationNav}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setDistCurrentPage(1)}
+                  disabled={distCurrentPage === 1}
+                  style={{
+                    padding: '4px 8px',
+                    opacity: distCurrentPage === 1 ? 0.4 : 1,
+                    cursor: distCurrentPage === 1 ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Halaman Pertama"
+                >
+                  ⏮️
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setDistCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={distCurrentPage === 1}
+                  style={{
+                    padding: '4px 8px',
+                    opacity: distCurrentPage === 1 ? 0.4 : 1,
+                    cursor: distCurrentPage === 1 ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Sebelumnya"
+                >
+                  ◀️
+                </button>
+                
+                <span style={styles.pageIndicator}>
+                  Hal <strong>{distCurrentPage}</strong> dari <strong>{distTotalPages}</strong>
+                </span>
+
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setDistCurrentPage(prev => Math.min(prev + 1, distTotalPages))}
+                  disabled={distCurrentPage === distTotalPages}
+                  style={{
+                    padding: '4px 8px',
+                    opacity: distCurrentPage === distTotalPages ? 0.4 : 1,
+                    cursor: distCurrentPage === distTotalPages ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Selanjutnya"
+                >
+                  ▶️
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setDistCurrentPage(distTotalPages)}
+                  disabled={distCurrentPage === distTotalPages}
+                  style={{
+                    padding: '4px 8px',
+                    opacity: distCurrentPage === distTotalPages ? 0.4 : 1,
+                    cursor: distCurrentPage === distTotalPages ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Halaman Terakhir"
+                >
+                  ⏭️
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -852,5 +1153,48 @@ const styles = {
       fontWeight: '600',
       fontSize: '11px',
     };
+  },
+  paginationFooter: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '16px 20px',
+    borderTop: '1px solid hsl(var(--border))',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    flexWrap: 'wrap',
+    gap: '12px',
+  },
+  paginationLimit: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  paginationLabel: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+  },
+  pageSizeSelect: {
+    padding: '6px 12px',
+    fontSize: '12px',
+    borderRadius: '6px',
+    border: '1px solid hsl(var(--border))',
+    backgroundColor: 'hsl(var(--background))',
+    color: 'hsl(var(--foreground))',
+    outline: 'none',
+    cursor: 'pointer',
+  },
+  paginationInfo: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+  },
+  paginationNav: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  pageIndicator: {
+    fontSize: '12px',
+    margin: '0 8px',
+    color: 'hsl(var(--muted-foreground))',
   },
 };

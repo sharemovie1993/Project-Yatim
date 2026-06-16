@@ -237,8 +237,15 @@ class ApiService {
   }
 
   // Program & Penyaluran CRUD
-  static async getProgram() {
-    return this.request('/v1/program');
+  static async getProgram(params = {}) {
+    const query = new URLSearchParams();
+    if (params.paginate !== undefined) query.append('paginate', params.paginate);
+    if (params.page !== undefined) query.append('page', params.page);
+    if (params.limit !== undefined) query.append('limit', params.limit);
+    if (params.search !== undefined) query.append('search', params.search);
+
+    const queryString = query.toString();
+    return this.request(`/v1/program${queryString ? `?${queryString}` : ''}`);
   }
 
   static async addProgram(data) {
@@ -261,8 +268,16 @@ class ApiService {
     });
   }
 
-  static async getPenyaluran(programId) {
-    return this.request(`/v1/program/${programId}/penyaluran`);
+  static async getPenyaluran(programId, params = {}) {
+    const query = new URLSearchParams();
+    if (params.paginate !== undefined) query.append('paginate', params.paginate);
+    if (params.page !== undefined) query.append('page', params.page);
+    if (params.limit !== undefined) query.append('limit', params.limit);
+    if (params.search !== undefined) query.append('search', params.search);
+    if (params.status !== undefined) query.append('status', params.status);
+
+    const queryString = query.toString();
+    return this.request(`/v1/program/${programId}/penyaluran${queryString ? `?${queryString}` : ''}`);
   }
 
   static async generatePenyaluranUntukKelompok(programId, kelompokId, jumlahDiterima) {
