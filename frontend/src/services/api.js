@@ -226,6 +226,12 @@ class ApiService {
     });
   }
 
+  static async deleteProgram(id) {
+    return this.request(`/v1/program/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   static async getPenyaluran(programId) {
     return this.request(`/v1/program/${programId}/penyaluran`);
   }
@@ -234,6 +240,19 @@ class ApiService {
     return this.request(`/v1/program/${programId}/penyaluran/generate-kelompok`, {
       method: 'POST',
       body: JSON.stringify({ kelompokId, jumlahDiterima }),
+    });
+  }
+
+  static async addSinglePenyaluran(programId, mustahiqId, jumlahDiterima) {
+    return this.request(`/v1/program/${programId}/penyaluran/add-single`, {
+      method: 'POST',
+      body: JSON.stringify({ mustahiqId, jumlahDiterima }),
+    });
+  }
+
+  static async deletePenyaluran(penyaluranId) {
+    return this.request(`/v1/program/penyaluran/${penyaluranId}`, {
+      method: 'DELETE',
     });
   }
 

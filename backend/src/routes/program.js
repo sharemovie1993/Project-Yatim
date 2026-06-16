@@ -21,6 +21,11 @@ router.get('/', async (req, res) => {
 
     const data = await prisma.programSantunan.findMany({
       where: { tenant_id: tenantId },
+      include: {
+        _count: {
+          select: { penyaluran: true }
+        }
+      },
       orderBy: { tanggal_pelaksanaan: 'desc' }
     });
     
@@ -238,6 +243,61 @@ router.get('/:programId/spj-pdf', async (req, res) => {
     if (!res.headersSent) {
       res.status(500).json({ success: false, error: error.message });
     }
+  }
+});
+
+// POST /api/v1/program/:programId/penyaluran/add-single
+router.post('/:programId/penyaluran/add-single', async (req, res) => {
+  try {
+    const { programId } = req.params;
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    const { mustahiqId, jumlahDiterima } = req.body;
+    if (!mustahiqId || !jumlahDiterima) {
+      return res.status(400).json({ success: false, error: 'mustahiqId and jumlahDiterima are required.' });
+    }
+
+    const data = await prisma.penyaluranSantunan.upsert({
+      where: {
+        program_id_mustahiq_id: {
+          program_id: programId,
+          mustahiq_id: mustahiqId
+        }
+      },
+      update: {
+        jumlah_diterima: jumlahDiterima,
+        status: 'BELUM'
+      },
+      create: {
+        tenant_id: tenantId,
+        program_id: programId,
+        mustahiq_id: mustahiqId,
+        jumlah_diterima: jumlahDiterima,
+        status: 'BELUM'
+      }
+    });
+
+    res.status(201).json({ success: true, data });
+  } catch (error) {
+    console.error('[POST Add Single Penyaluran Error]', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// DELETE /api/v1/program/penyaluran/:penyaluranId
+router.delete('/penyaluran/:penyaluranId', async (req, res) => {
+  try {
+    const { penyaluranId } = req.params;
+    await prisma.penyaluranSantunan.delete({
+      where: { id: penyaluranId }
+    });
+    res.json({ success: true, message: 'Penyaluran record deleted successfully.' });
+  } catch (error) {
+    console.error('[DELETE Penyaluran Error]', error);
+    res.status(400).json({ success: false, error: error.message });
   }
 });
 

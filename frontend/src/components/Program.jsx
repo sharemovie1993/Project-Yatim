@@ -6,8 +6,10 @@ export default function Program() {
   const [kelompokList, setKelompokList] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Add Program state
+  // Add & Edit Program state
   const [showAddModal, setShowAddModal] = useState(false);
+  const [isEdit, setIsEdit] = useState(false);
+  const [editId, setEditId] = useState('');
   const [newProgram, setNewProgram] = useState({
     nama_program: '',
     tanggal_pelaksanaan: new Date().toISOString().slice(0, 10),
@@ -20,6 +22,12 @@ export default function Program() {
   const [selectedProgram, setSelectedProgram] = useState(null);
   const [penyaluranList, setPenyaluranList] = useState([]);
   const [showDistModal, setShowDistModal] = useState(false);
+  const [recipientSearch, setRecipientSearch] = useState('');
+
+  // Add single mustahiq state
+  const [selectedMustahiqId, setSelectedMustahiqId] = useState('');
+  const [singleJumlah, setSingleJumlah] = useState('Rp 150.000');
+  const [allActiveMustahiqs, setAllActiveMustahiqs] = useState([]);
 
   // Generate distribution state
   const [showGenModal, setShowGenModal] = useState(false);
@@ -45,25 +53,80 @@ export default function Program() {
     loadData();
   }, []);
 
-  const handleAddProgram = async (e) => {
+  const handleOpenAdd = () => {
+    setIsEdit(false);
+    setEditId('');
+    setNewProgram({
+      nama_program: '',
+      tanggal_pelaksanaan: new Date().toISOString().slice(0, 10),
+      jenis: 'UANG_TUNAI',
+      total_anggaran: '',
+      status: 'DRAFT',
+    });
+    setShowAddModal(true);
+  };
+
+  const handleOpenEdit = (p) => {
+    setIsEdit(true);
+    setEditId(p.id);
+    setNewProgram({
+      nama_program: p.nama_program,
+      tanggal_pelaksanaan: p.tanggal_pelaksanaan,
+      jenis: p.jenis,
+      total_anggaran: p.total_anggaran || '',
+      status: p.status || 'DRAFT',
+    });
+    setShowAddModal(true);
+  };
+
+  const handleSaveProgram = async (e) => {
     e.preventDefault();
     if (!newProgram.nama_program.trim()) return alert('Nama program wajib diisi.');
     try {
-      await ApiService.addProgram(newProgram);
-      alert('Program santunan baru berhasil dibuat.');
+      const payload = {
+        nama_program: newProgram.nama_program.trim(),
+        tanggal_pelaksanaan: newProgram.tanggal_pelaksanaan,
+        jenis: newProgram.jenis,
+        total_anggaran: newProgram.total_anggaran ? parseFloat(newProgram.total_anggaran) : 0,
+        status: newProgram.status,
+      };
+
+      if (isEdit) {
+        await ApiService.updateProgram(editId, payload);
+        alert('Program santunan berhasil diperbarui.');
+      } else {
+        await ApiService.addProgram(payload);
+        alert('Program santunan baru berhasil dibuat.');
+      }
       setShowAddModal(false);
       loadData();
     } catch (err) {
-      alert('Gagal membuat program: ' + err.message);
+      alert('Gagal menyimpan program: ' + err.message);
+    }
+  };
+
+  const handleDeleteProgram = async (id) => {
+    if (!confirm('Apakah Anda yakin ingin menghapus program ini? Seluruh data penyaluran di dalamnya juga akan terhapus secara permanen.')) return;
+    try {
+      await ApiService.deleteProgram(id);
+      alert('Program berhasil dihapus.');
+      loadData();
+    } catch (err) {
+      alert('Gagal menghapus program: ' + err.message);
     }
   };
 
   const handleOpenDistributions = async (p) => {
     setSelectedProgram(p);
     setLoading(true);
+    setRecipientSearch('');
     try {
       const res = await ApiService.getPenyaluran(p.id);
       setPenyaluranList(res.data || []);
+      
+      const mustRes = await ApiService.getMustahiq(true); // Active only
+      setAllActiveMustahiqs(mustRes.data || []);
+
       setShowDistModal(true);
     } catch (e) {
       console.error('Failed to load distribution list:', e);
@@ -82,8 +145,47 @@ export default function Program() {
       // Reload distributions list
       const dRes = await ApiService.getPenyaluran(selectedProgram.id);
       setPenyaluranList(dRes.data || []);
+      // Reload programs to refresh target counts
+      const pRes = await ApiService.getProgram();
+      setPrograms(pRes.data || []);
     } catch (err) {
       alert('Gagal memproses: ' + err.message);
+    }
+  };
+
+  const handleAddSingleRecipient = async (e) => {
+    e.preventDefault();
+    if (!selectedMustahiqId) return alert('Silakan pilih mustahiq.');
+    if (!singleJumlah.trim()) return alert('Silakan masukkan jumlah bantuan.');
+    try {
+      await ApiService.addSinglePenyaluran(selectedProgram.id, selectedMustahiqId, singleJumlah.trim());
+      alert('Mustahiq berhasil ditambahkan ke daftar penerima.');
+      setSelectedMustahiqId('');
+      setSingleJumlah('Rp 150.000');
+      // Reload distributions list
+      const dRes = await ApiService.getPenyaluran(selectedProgram.id);
+      setPenyaluranList(dRes.data || []);
+      // Reload programs list to update counts
+      const pRes = await ApiService.getProgram();
+      setPrograms(pRes.data || []);
+    } catch (err) {
+      alert('Gagal menambahkan mustahiq: ' + err.message);
+    }
+  };
+
+  const handleDeleteRecipient = async (penyaluranId) => {
+    if (!confirm('Keluarkan mustahiq dari daftar penerima program ini?')) return;
+    try {
+      await ApiService.deletePenyaluran(penyaluranId);
+      alert('Penerima berhasil dikeluarkan dari program.');
+      // Reload distributions list
+      const dRes = await ApiService.getPenyaluran(selectedProgram.id);
+      setPenyaluranList(dRes.data || []);
+      // Reload programs list to update counts
+      const pRes = await ApiService.getProgram();
+      setPrograms(pRes.data || []);
+    } catch (err) {
+      alert('Gagal mengeluarkan penerima: ' + err.message);
     }
   };
 
@@ -103,6 +205,22 @@ export default function Program() {
     window.open(url, '_blank');
   };
 
+  // Local Filter logic for recipients
+  const filteredPenyaluran = penyaluranList.filter(py => {
+    return (py.mustahiq?.nama_lengkap || '').toLowerCase().includes(recipientSearch.toLowerCase());
+  });
+
+  // Calculate statistics for distributions
+  const distTotalDana = penyaluranList.reduce((acc, py) => {
+    const val = parseInt((py.jumlah_diterima || '').replace(/[^0-9]/g, ''), 10) || 0;
+    return acc + val;
+  }, 0);
+
+  // Calculate stats for main page
+  const totalPrograms = programs.length;
+  const totalBudget = programs.reduce((acc, p) => acc + (p.total_anggaran || 0), 0);
+  const averageBudget = totalPrograms > 0 ? (totalBudget / totalPrograms).toFixed(0) : '0';
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
@@ -110,11 +228,33 @@ export default function Program() {
           <h1 style={styles.title}>Program & Penyaluran Santunan</h1>
           <p style={styles.subtitle}>Kelola program bantuan sosial dan cetak berkas SPJ secara realtime</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>➕ Rancang Program</button>
+        <button className="btn btn-primary" onClick={handleOpenAdd}>➕ Rancang Program</button>
+      </div>
+
+      {/* Stats Banner */}
+      <div style={styles.statsRow}>
+        <div className="card glass" style={styles.miniStatCard}>
+          <span style={styles.miniStatLabel}>Total Program</span>
+          <h3 style={styles.miniStatVal}>
+            {totalPrograms} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>agenda</span>
+          </h3>
+        </div>
+        <div className="card glass" style={{ ...styles.miniStatCard, borderLeft: '4px solid hsl(var(--primary))' }}>
+          <span style={styles.miniStatLabel}>💰 Total Rencana Anggaran</span>
+          <h3 style={{ ...styles.miniStatVal, color: 'hsl(var(--primary))' }}>
+            Rp {totalBudget.toLocaleString('id-ID')}
+          </h3>
+        </div>
+        <div className="card glass" style={{ ...styles.miniStatCard, borderLeft: '4px solid hsl(var(--accent))' }}>
+          <span style={styles.miniStatLabel}>📊 Rata-rata Anggaran</span>
+          <h3 style={{ ...styles.miniStatVal, color: 'hsl(var(--accent))' }}>
+            Rp {parseInt(averageBudget, 10).toLocaleString('id-ID')} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>/program</span>
+          </h3>
+        </div>
       </div>
 
       <div className="card" style={styles.tableCard}>
-        {loading && !showDistModal ? (
+        {loading && !showDistModal && !showAddModal ? (
           <div style={styles.centerText}>Memuat data program...</div>
         ) : programs.length === 0 ? (
           <div style={styles.centerText}>Belum ada program dirancang.</div>
@@ -127,6 +267,7 @@ export default function Program() {
                   <th style={styles.th}>Tanggal Pelaksanaan</th>
                   <th style={styles.th}>Jenis Bantuan</th>
                   <th style={styles.th}>Total Anggaran</th>
+                  <th style={styles.th}>Target Penerima</th>
                   <th style={styles.th}>Status</th>
                   <th style={styles.th}>Aksi</th>
                 </tr>
@@ -139,10 +280,17 @@ export default function Program() {
                     <td style={styles.td}>{p.jenis}</td>
                     <td style={styles.td}>Rp {(p.total_anggaran || 0).toLocaleString('id-ID')}</td>
                     <td style={styles.td}>
+                      <span style={{ fontWeight: '600', color: 'hsl(var(--primary))' }}>
+                        {p._count?.penyaluran || 0}
+                      </span> jiwa
+                    </td>
+                    <td style={styles.td}>
                       <span style={styles.statusBadge(p.status)}>{p.status}</span>
                     </td>
                     <td style={styles.td}>
                       <div style={styles.actionGroup}>
+                        <button className="btn btn-outline" style={styles.iconBtn} title="Ubah Program" onClick={() => handleOpenEdit(p)}>✏️ Edit</button>
+                        <button className="btn btn-outline" style={{ ...styles.iconBtn, color: '#ef4444' }} title="Hapus Program" onClick={() => handleDeleteProgram(p.id)}>🗑️ Hapus</button>
                         <button className="btn btn-primary" style={styles.actionBtn} onClick={() => handleOpenDistributions(p)}>
                           📊 Distribusi
                         </button>
@@ -159,12 +307,12 @@ export default function Program() {
         )}
       </div>
 
-      {/* Add Program Modal */}
+      {/* Add / Edit Program Modal */}
       {showAddModal && (
         <div style={styles.modalOverlay}>
           <div className="card" style={styles.modalContent}>
-            <h3 style={styles.modalTitle}>Rancang Program Baru</h3>
-            <form onSubmit={handleAddProgram} style={styles.form}>
+            <h3 style={styles.modalTitle}>{isEdit ? 'Ubah Rencana Program' : 'Rancang Program Baru'}</h3>
+            <form onSubmit={handleSaveProgram} style={styles.form}>
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Nama Program *</label>
                 <input
@@ -214,6 +362,21 @@ export default function Program() {
                 />
               </div>
 
+              {isEdit && (
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Status Program</label>
+                  <select
+                    className="input"
+                    value={newProgram.status}
+                    onChange={(e) => setNewProgram({ ...newProgram, status: e.target.value })}
+                    required
+                  >
+                    <option value="DRAFT">DRAFT</option>
+                    <option value="SELESAI">SELESAI</option>
+                  </select>
+                </div>
+              )}
+
               <div style={styles.modalFooter}>
                 <button type="button" className="btn btn-outline" onClick={() => setShowAddModal(false)}>Batal</button>
                 <button type="submit" className="btn btn-primary">Simpan Program</button>
@@ -238,9 +401,91 @@ export default function Program() {
               </div>
             </div>
 
+            {/* Modal Stats Row */}
+            <div style={styles.modalStatsRow}>
+              <div style={styles.modalStatCard}>
+                <span style={styles.modalStatLabel}>Total Penerima</span>
+                <span style={styles.modalStatVal}>{penyaluranList.length} jiwa</span>
+              </div>
+              <div style={styles.modalStatCard}>
+                <span style={styles.modalStatLabel}>Dana Rencana</span>
+                <span style={styles.modalStatVal}>Rp {distTotalDana.toLocaleString('id-ID')}</span>
+              </div>
+              <div style={{ ...styles.modalStatCard, borderLeft: '3px solid hsl(var(--primary))' }}>
+                <span style={styles.modalStatLabel}>Tersalurkan</span>
+                <span style={{ ...styles.modalStatVal, color: 'hsl(var(--primary))' }}>
+                  {penyaluranList.filter(py => py.status === 'TERSALURKAN').length} jiwa
+                </span>
+              </div>
+              <div style={{ ...styles.modalStatCard, borderLeft: '3px solid hsl(var(--accent))' }}>
+                <span style={styles.modalStatLabel}>Belum Salur</span>
+                <span style={{ ...styles.modalStatVal, color: 'hsl(var(--accent))' }}>
+                  {penyaluranList.filter(py => py.status === 'BELUM').length} jiwa
+                </span>
+              </div>
+              <div style={{ ...styles.modalStatCard, borderLeft: '3px solid #ef4444' }}>
+                <span style={styles.modalStatLabel}>Batal</span>
+                <span style={{ ...styles.modalStatVal, color: '#ef4444' }}>
+                  {penyaluranList.filter(py => py.status === 'BATAL').length} jiwa
+                </span>
+              </div>
+            </div>
+
+            {/* Add Single Recipient Inline Form */}
+            <form onSubmit={handleAddSingleRecipient} style={styles.inlineForm}>
+              <div style={{ ...styles.inputGroup, flex: 2 }}>
+                <label style={styles.label}>Tambah Penerima Individu</label>
+                <select
+                  className="input"
+                  value={selectedMustahiqId}
+                  onChange={(e) => setSelectedMustahiqId(e.target.value)}
+                  style={{ height: '38px', fontSize: '12px' }}
+                >
+                  <option value="">-- Pilih Mustahiq Aktif --</option>
+                  {allActiveMustahiqs
+                    .filter(m => !penyaluranList.some(py => py.mustahiq_id === m.id))
+                    .map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.nama_lengkap} ({m.kategori})
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div style={{ ...styles.inputGroup, flex: 1 }}>
+                <label style={styles.label}>Nominal Santunan</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Rp 150.000"
+                  value={singleJumlah}
+                  onChange={(e) => setSingleJumlah(e.target.value)}
+                  style={{ height: '38px', fontSize: '12px' }}
+                  required
+                />
+              </div>
+              <button type="submit" className="btn btn-primary" style={{ height: '38px', padding: '0 15px', fontSize: '12px' }}>
+                ➕ Tambah
+              </button>
+            </form>
+
+            {/* Recipient Table Toolbar */}
+            <div style={styles.toolbar}>
+              <h4 style={{ margin: 0, fontWeight: '700', fontSize: '14px' }}>Daftar Penerima Manfaat</h4>
+              <input
+                type="text"
+                className="input"
+                placeholder="Cari nama penerima..."
+                value={recipientSearch}
+                onChange={(e) => setRecipientSearch(e.target.value)}
+                style={{ maxWidth: '250px', height: '34px', fontSize: '12px' }}
+              />
+            </div>
+
             <div style={styles.tableWrapperModal}>
-              {penyaluranList.length === 0 ? (
-                <div style={styles.centerText}>Belum ada target mustahiq. Silakan klik tombol 'Generate via Kelompok' untuk menambahkan.</div>
+              {filteredPenyaluran.length === 0 ? (
+                <div style={styles.centerText}>
+                  {recipientSearch ? 'Penerima tidak ditemukan.' : 'Belum ada target mustahiq. Silakan gunakan form di atas untuk menambah.'}
+                </div>
               ) : (
                 <table style={styles.table}>
                   <thead>
@@ -254,10 +499,10 @@ export default function Program() {
                     </tr>
                   </thead>
                   <tbody>
-                    {penyaluranList.map(py => (
+                    {filteredPenyaluran.map(py => (
                       <tr key={py.id} style={styles.tr}>
                         <td style={{ ...styles.td, fontWeight: '600' }}>{py.mustahiq?.nama_lengkap}</td>
-                        <td style={styles.td}>{py.kelompok?.nama_kelompok || '-'}</td>
+                        <td style={styles.td}>{py.kelompok?.nama_kelompok || 'Manual (Individu)'}</td>
                         <td style={styles.td}><span style={styles.tagKategori}>{py.mustahiq?.kategori}</span></td>
                         <td style={styles.td}>{py.jumlah_diterima}</td>
                         <td style={styles.td}>
@@ -283,6 +528,14 @@ export default function Program() {
                                 ✕ Batal
                               </button>
                             )}
+                            <button 
+                              className="btn btn-outline" 
+                              style={{ ...styles.actionBtn, padding: '4px 8px', fontSize: '11px', color: '#ef4444' }}
+                              title="Keluarkan dari daftar"
+                              onClick={() => handleDeleteRecipient(py.id)}
+                            >
+                              🗑️
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -351,6 +604,8 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '12px',
   },
   title: {
     fontSize: '26px',
@@ -361,6 +616,28 @@ const styles = {
     color: 'hsl(var(--muted-foreground))',
     marginTop: '4px',
   },
+  statsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '20px',
+    marginBottom: '8px',
+  },
+  miniStatCard: {
+    padding: '16px 20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  miniStatLabel: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+    fontWeight: '500',
+  },
+  miniStatVal: {
+    fontSize: '22px',
+    fontWeight: '800',
+    margin: 0,
+  },
   tableCard: {
     padding: '0px',
     overflow: 'hidden',
@@ -369,7 +646,7 @@ const styles = {
     overflowX: 'auto',
   },
   tableWrapperModal: {
-    maxHeight: '400px',
+    maxHeight: '350px',
     overflowY: 'auto',
   },
   table: {
@@ -396,11 +673,19 @@ const styles = {
   },
   actionGroup: {
     display: 'flex',
+    alignItems: 'center',
     gap: '6px',
+  },
+  iconBtn: {
+    padding: '6px 10px',
+    fontSize: '12px',
+    cursor: 'pointer',
   },
   actionBtn: {
     padding: '6px 10px',
     fontSize: '12px',
+    fontWeight: '600',
+    cursor: 'pointer',
   },
   tagKategori: {
     backgroundColor: 'hsl(var(--muted))',
@@ -438,14 +723,18 @@ const styles = {
     padding: '24px 30px',
   },
   largeModalContent: {
-    width: '90%',
+    width: '95%',
     maxWidth: '850px',
     padding: '30px',
+    maxHeight: '90vh',
+    overflowY: 'auto',
   },
   modalHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '15px',
     marginBottom: '20px',
     borderBottom: '1px solid hsl(var(--border))',
     paddingBottom: '12px',
@@ -457,11 +746,13 @@ const styles = {
   modalTitle: {
     fontSize: '18px',
     fontWeight: '700',
+    margin: 0,
   },
   modalDesc: {
     fontSize: '12px',
     color: 'hsl(var(--muted-foreground))',
     marginTop: '4px',
+    margin: 0,
   },
   form: {
     display: 'flex',
@@ -483,6 +774,49 @@ const styles = {
     justifyContent: 'flex-end',
     gap: '10px',
     marginTop: '12px',
+  },
+  inlineForm: {
+    display: 'flex',
+    alignItems: 'flex-end',
+    gap: '10px',
+    backgroundColor: 'rgba(255,255,255,0.01)',
+    padding: '15px',
+    borderRadius: '8px',
+    border: '1px dashed hsl(var(--border))',
+    marginBottom: '20px',
+    flexWrap: 'wrap',
+  },
+  toolbar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: '20px',
+    marginBottom: '12px',
+  },
+  modalStatsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+    gap: '15px',
+    marginBottom: '20px',
+  },
+  modalStatCard: {
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    border: '1px solid hsl(var(--border))',
+    borderRadius: '6px',
+    padding: '10px 14px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px',
+  },
+  modalStatLabel: {
+    fontSize: '11px',
+    color: 'hsl(var(--muted-foreground))',
+    fontWeight: '500',
+  },
+  modalStatVal: {
+    fontSize: '15px',
+    fontWeight: '700',
+    color: 'hsl(var(--foreground))',
   },
   statusBadge: (status) => {
     let bg = 'rgba(59, 130, 246, 0.12)';
