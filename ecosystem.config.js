@@ -38,10 +38,18 @@ const frontendEnv = readEnv(path.join(__dirname, 'frontend', '.env'));
 const backendPort = process.env.PORT || backendEnv.PORT || '5002';
 const frontendPort = process.env.FRONTEND_PORT || backendEnv.FRONTEND_PORT || '5174';
 
+// Print a beautiful summary in terminal when PM2 loads/executes this config file
+console.log('\x1b[36m==================================================\x1b[0m');
+console.log('\x1b[32m       🚀  PROJECT YATIM DEPLOYMENT INFO  🚀       \x1b[0m');
+console.log('\x1b[36m==================================================\x1b[0m');
+console.log(` 🌐 Backend API : \x1b[35mhttp://localhost:${backendPort}\x1b[0m`);
+console.log(` 💻 Frontend Web: \x1b[35mhttp://localhost:${frontendPort}\x1b[0m`);
+console.log('\x1b[36m==================================================\x1b[0m\n');
+
 module.exports = {
   apps: [
     {
-      name: 'mustahiq-backend',
+      name: `mustahiq-backend:${backendPort}`,
       script: 'src/server.js',
       cwd: path.join(__dirname, 'backend'),
       env: {
@@ -56,7 +64,7 @@ module.exports = {
       exec_mode: 'fork'
     },
     {
-      name: 'mustahiq-frontend',
+      name: `mustahiq-frontend:${frontendPort}`,
       script: 'node_modules/vite/bin/vite.js',
       args: `preview --port ${frontendPort} --host 0.0.0.0`,
       cwd: path.join(__dirname, 'frontend'),
