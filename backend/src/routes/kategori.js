@@ -45,8 +45,29 @@ router.get('/', async (req, res) => {
         orderBy: { nama_kategori: 'asc' }
       });
     }
+
+    // Fetch counts of mustahiq grouped by kategori
+    const counts = await prisma.mustahiq.groupBy({
+      by: ['kategori'],
+      where: { tenant_id: tenantId },
+      _count: {
+        id: true
+      }
+    });
+
+    const countMap = {};
+    counts.forEach(c => {
+      if (c.kategori) {
+        countMap[c.kategori.toUpperCase()] = c._count.id;
+      }
+    });
+
+    const dataWithCounts = data.map(item => ({
+      ...item,
+      mustahiq_count: countMap[item.nama_kategori.toUpperCase()] || 0
+    }));
     
-    res.json({ success: true, data });
+    res.json({ success: true, data: dataWithCounts });
   } catch (error) {
     console.error('[GET Kategori Error]', error);
     res.status(500).json({ success: false, error: error.message });
@@ -66,10 +87,20 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Nama kategori is required.' });
     }
 
+    const normalizedName = nama_kategori.trim().toUpperCase();
+
+    // Check for duplicate category name
+    const existing = await prisma.kategori.findFirst({
+      where: { tenant_id: tenantId, nama_kategori: normalizedName }
+    });
+    if (existing) {
+      return res.status(400).json({ success: false, error: 'Kategori dengan nama tersebut sudah ada.' });
+    }
+
     const data = await prisma.kategori.create({
       data: {
         tenant_id: tenantId,
-        nama_kategori: nama_kategori.trim().toUpperCase(),
+        nama_kategori: normalizedName,
         keterangan: keterangan ? keterangan.trim() : null
       }
     });
@@ -87,13 +118,45 @@ router.put('/:id', async (req, res) => {
     const { id } = req.params;
     const { nama_kategori, keterangan } = req.body;
 
+    const oldCategory = await prisma.kategori.findUnique({
+      where: { id }
+    });
+    if (!oldCategory) {
+      return res.status(404).json({ success: false, error: 'Kategori tidak ditemukan.' });
+    }
+
+    let normalizedName = oldCategory.nama_kategori;
+    if (nama_kategori) {
+      normalizedName = nama_kategori.trim().toUpperCase();
+      
+      // Check duplicate category name
+      const existing = await prisma.kategori.findFirst({
+        where: {
+          tenant_id: oldCategory.tenant_id,
+          nama_kategori: normalizedName,
+          NOT: { id }
+        }
+      });
+      if (existing) {
+        return res.status(400).json({ success: false, error: 'Kategori dengan nama tersebut sudah ada.' });
+      }
+    }
+
     const data = await prisma.kategori.update({
       where: { id },
       data: {
-        nama_kategori: nama_kategori ? nama_kategori.trim().toUpperCase() : undefined,
+        nama_kategori: normalizedName,
         keterangan: keterangan !== undefined ? (keterangan ? keterangan.trim() : null) : undefined
       }
     });
+
+    // Cascade update mustahiq records if the name was changed
+    if (oldCategory.nama_kategori !== normalizedName) {
+      await prisma.mustahiq.updateMany({
+        where: { tenant_id: oldCategory.tenant_id, kategori: oldCategory.nama_kategori },
+        data: { kategori: normalizedName }
+      });
+    }
     
     res.json({ success: true, data });
   } catch (error) {
@@ -106,6 +169,24 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+
+    const category = await prisma.kategori.findUnique({
+      where: { id }
+    });
+    if (!category) {
+      return res.status(404).json({ success: false, error: 'Kategori tidak ditemukan.' });
+    }
+
+    // Check if category is used by any mustahiq
+    const usageCount = await prisma.mustahiq.count({
+      where: { tenant_id: category.tenant_id, kategori: category.nama_kategori }
+    });
+    if (usageCount > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Kategori '${category.nama_kategori}' sedang digunakan oleh ${usageCount} mustahiq dan tidak dapat dihapus.`
+      });
+    }
 
     await prisma.kategori.delete({
       where: { id }

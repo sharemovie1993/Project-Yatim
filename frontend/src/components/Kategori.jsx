@@ -9,6 +9,7 @@ export default function Kategori() {
   const [editId, setEditId] = useState('');
   const [namaKategori, setNamaKategori] = useState('');
   const [keterangan, setKeterangan] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const loadData = async () => {
     setLoading(true);
@@ -70,6 +71,26 @@ export default function Kategori() {
     }
   };
 
+  // Calculate statistics for categories
+  const totalCategories = categories.length;
+  
+  let popularCategoryName = '-';
+  let maxCount = 0;
+  categories.forEach(c => {
+    if ((c.mustahiq_count || 0) > maxCount) {
+      maxCount = c.mustahiq_count;
+      popularCategoryName = c.nama_kategori;
+    }
+  });
+  
+  const totalMustahiqsCategorized = categories.reduce((acc, c) => acc + (c.mustahiq_count || 0), 0);
+
+  // Filter categories
+  const filteredCategories = categories.filter(c => {
+    return c.nama_kategori.toLowerCase().includes(searchQuery.toLowerCase()) ||
+           (c.keterangan || '').toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
   return (
     <div style={styles.container}>
       <div style={styles.header}>
@@ -80,11 +101,47 @@ export default function Kategori() {
         <button className="btn btn-primary" onClick={handleOpenAdd}>➕ Tambah Kategori</button>
       </div>
 
+      {/* Stats Banner */}
+      <div style={styles.statsRow}>
+        <div className="card glass" style={styles.miniStatCard}>
+          <span style={styles.miniStatLabel}>Total Kategori</span>
+          <h3 style={styles.miniStatVal}>
+            {totalCategories} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>kategori</span>
+          </h3>
+        </div>
+        <div className="card glass" style={{ ...styles.miniStatCard, borderLeft: '4px solid hsl(var(--primary))' }}>
+          <span style={styles.miniStatLabel}>🏆 Kategori Terpopuler</span>
+          <h3 style={{ ...styles.miniStatVal, color: 'hsl(var(--primary))' }}>
+            {popularCategoryName} <span style={{ fontSize: '12px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>({maxCount} jiwa)</span>
+          </h3>
+        </div>
+        <div className="card glass" style={{ ...styles.miniStatCard, borderLeft: '4px solid hsl(var(--accent))' }}>
+          <span style={styles.miniStatLabel}>👥 Mustahiq Terkategori</span>
+          <h3 style={{ ...styles.miniStatVal, color: 'hsl(var(--accent))' }}>
+            {totalMustahiqsCategorized} <span style={{ fontSize: '13px', fontWeight: 'normal', color: 'hsl(var(--muted-foreground))' }}>jiwa</span>
+          </h3>
+        </div>
+      </div>
+
+      {/* Search Box */}
+      <div style={styles.searchContainer}>
+        <input
+          type="text"
+          className="input"
+          placeholder="🔍 Cari nama kategori atau deskripsi..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={styles.searchInput}
+        />
+      </div>
+
       <div className="card" style={styles.tableCard}>
         {loading ? (
           <div style={styles.centerText}>Memuat data kategori...</div>
-        ) : categories.length === 0 ? (
-          <div style={styles.centerText}>Belum ada kategori terdaftar.</div>
+        ) : filteredCategories.length === 0 ? (
+          <div style={styles.centerText}>
+            {categories.length === 0 ? 'Belum ada kategori terdaftar.' : 'Tidak ditemukan kategori yang cocok.'}
+          </div>
         ) : (
           <div style={styles.tableWrapper}>
             <table style={styles.table}>
@@ -92,20 +149,24 @@ export default function Kategori() {
                 <tr style={styles.thRow}>
                   <th style={styles.th}>Nama Kategori (Slug)</th>
                   <th style={styles.th}>Keterangan Deskripsi</th>
+                  <th style={styles.th}>Jumlah Mustahiq</th>
                   <th style={styles.th}>Aksi</th>
                 </tr>
               </thead>
               <tbody>
-                {categories.map((c) => (
+                {filteredCategories.map((c) => (
                   <tr key={c.id} style={styles.tr}>
                     <td style={{ ...styles.td, fontWeight: '700', color: 'hsl(var(--primary))' }}>
                       {c.nama_kategori}
                     </td>
                     <td style={styles.td}>{c.keterangan || '-'}</td>
+                    <td style={{ ...styles.td, fontWeight: '600', color: 'hsl(var(--foreground))' }}>
+                      {c.mustahiq_count || 0} jiwa
+                    </td>
                     <td style={styles.td}>
                       <div style={styles.actionGroup}>
-                        <button className="btn btn-outline" style={styles.actionBtn} onClick={() => handleOpenEdit(c)}>✏️</button>
-                        <button className="btn btn-outline" style={{ ...styles.actionBtn, color: '#ef4444' }} onClick={() => handleDelete(c.id)}>🗑️</button>
+                        <button className="btn btn-outline" style={styles.actionBtn} onClick={() => handleOpenEdit(c)}>✏️ Edit</button>
+                        <button className="btn btn-outline" style={{ ...styles.actionBtn, color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.15)' }} onClick={() => handleDelete(c.id)}>🗑️ Hapus</button>
                       </div>
                     </td>
                   </tr>
@@ -176,6 +237,41 @@ const styles = {
     fontSize: '13px',
     color: 'hsl(var(--muted-foreground))',
     marginTop: '4px',
+  },
+  statsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+    gap: '20px',
+    marginBottom: '8px',
+  },
+  miniStatCard: {
+    padding: '20px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  miniStatLabel: {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: 'hsl(var(--muted-foreground))',
+    textTransform: 'uppercase',
+    letterSpacing: '0.5px',
+  },
+  miniStatVal: {
+    fontSize: '22px',
+    fontWeight: '800',
+    margin: 0,
+  },
+  searchContainer: {
+    display: 'flex',
+    gap: '12px',
+    alignItems: 'center',
+    marginBottom: '10px',
+  },
+  searchInput: {
+    maxWidth: '300px',
+    height: '38px',
+    width: '100%',
   },
   tableCard: {
     padding: '0px',
