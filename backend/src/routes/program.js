@@ -425,6 +425,70 @@ router.post('/:programId/penyaluran/add-single', async (req, res) => {
   }
 });
 
+// POST /api/v1/program/:programId/penyaluran/bulk-status
+router.post('/:programId/penyaluran/bulk-status', async (req, res) => {
+  try {
+    const { programId } = req.params;
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    const { ids, status } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0 || !status) {
+      return res.status(400).json({ success: false, error: 'ids (non-empty array) and status are required.' });
+    }
+
+    const validStatuses = ['BELUM', 'TERSALURKAN', 'BATAL'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, error: 'Status tidak valid.' });
+    }
+
+    const updateRes = await prisma.penyaluranSantunan.updateMany({
+      where: {
+        id: { in: ids },
+        program_id: programId,
+        tenant_id: tenantId
+      },
+      data: { status }
+    });
+
+    res.json({ success: true, count: updateRes.count });
+  } catch (error) {
+    console.error('[POST Bulk Status Penyaluran Error]', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/v1/program/:programId/penyaluran/bulk-delete
+router.post('/:programId/penyaluran/bulk-delete', async (req, res) => {
+  try {
+    const { programId } = req.params;
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'ids must be a non-empty array.' });
+    }
+
+    const deleteRes = await prisma.penyaluranSantunan.deleteMany({
+      where: {
+        id: { in: ids },
+        program_id: programId,
+        tenant_id: tenantId
+      }
+    });
+
+    res.json({ success: true, count: deleteRes.count });
+  } catch (error) {
+    console.error('[POST Bulk Delete Penyaluran Error]', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 // DELETE /api/v1/program/penyaluran/:penyaluranId
 router.delete('/penyaluran/:penyaluranId', async (req, res) => {
   try {

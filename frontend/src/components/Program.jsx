@@ -38,6 +38,7 @@ export default function Program() {
   const [distStatus, setDistStatus] = useState('');
   const [distStats, setDistStats] = useState({ total: 0, dana: 0, tersalurkan: 0, belum: 0, batal: 0 });
   const [existingMustahiqIds, setExistingMustahiqIds] = useState([]);
+  const [selectedRecipientIds, setSelectedRecipientIds] = useState([]);
 
   // Add single mustahiq state
   const [selectedMustahiqId, setSelectedMustahiqId] = useState('');
@@ -76,6 +77,7 @@ export default function Program() {
   const loadPenyaluranData = async (programId = selectedProgram?.id, page = distCurrentPage, limit = distPageSize) => {
     if (!programId) return;
     setLoading(true);
+    setSelectedRecipientIds([]); // Clear selection on fetch to avoid out-of-sync IDs
     try {
       const res = await ApiService.getPenyaluran(programId, {
         paginate: true,
@@ -196,6 +198,7 @@ export default function Program() {
   const handleOpenDistributions = async (p) => {
     setSelectedProgram(p);
     setLoading(true);
+    setSelectedRecipientIds([]);
     setRecipientSearch('');
     setDistStatus('');
     setDistCurrentPage(1);
@@ -292,6 +295,36 @@ export default function Program() {
       loadPenyaluranData(selectedProgram.id);
     } catch (err) {
       alert('Gagal memperbarui status: ' + err.message);
+    }
+  };
+
+  const handleBulkUpdateRecipientStatus = async (status) => {
+    if (selectedRecipientIds.length === 0) return alert('Pilih minimal satu penerima.');
+    try {
+      await ApiService.bulkUpdateStatusPenyaluran(selectedProgram.id, selectedRecipientIds, status);
+      setSelectedRecipientIds([]);
+      loadPenyaluranData(selectedProgram.id);
+      loadData();
+      alert('Status penerima terpilih berhasil diperbarui.');
+    } catch (err) {
+      alert('Gagal memperbarui status: ' + err.message);
+    }
+  };
+
+  const handleBulkDeleteRecipients = async () => {
+    if (selectedRecipientIds.length === 0) return alert('Pilih minimal satu penerima.');
+    if (!confirm('Keluarkan seluruh penerima terpilih dari program ini?')) return;
+    try {
+      await ApiService.bulkDeletePenyaluran(selectedProgram.id, selectedRecipientIds);
+      setSelectedRecipientIds([]);
+      const fullRes = await ApiService.getPenyaluran(selectedProgram.id, { paginate: false });
+      setExistingMustahiqIds(fullRes.data?.map(py => py.mustahiq_id) || []);
+      
+      loadPenyaluranData(selectedProgram.id);
+      loadData();
+      alert('Penerima terpilih berhasil dikeluarkan dari program.');
+    } catch (err) {
+      alert('Gagal mengeluarkan penerima: ' + err.message);
     }
   };
 
@@ -704,6 +737,26 @@ export default function Program() {
                 <table style={styles.table}>
                   <thead>
                     <tr style={styles.thRow}>
+                      <th style={{ ...styles.th, width: '40px' }}>
+                        <input
+                          type="checkbox"
+                          checked={filteredPenyaluran.length > 0 && filteredPenyaluran.every(py => selectedRecipientIds.includes(py.id))}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedRecipientIds(prev => {
+                                const newIds = [...prev];
+                                filteredPenyaluran.forEach(py => {
+                                  if (!newIds.includes(py.id)) newIds.push(py.id);
+                                });
+                                return newIds;
+                              });
+                            } else {
+                              setSelectedRecipientIds(prev => prev.filter(id => !filteredPenyaluran.some(py => py.id === id)));
+                            }
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        />
+                      </th>
                       <th style={styles.th}>Nama Penerima</th>
                       <th style={styles.th}>Kelompok</th>
                       <th style={styles.th}>Jenis Kategori</th>
@@ -713,47 +766,67 @@ export default function Program() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredPenyaluran.map(py => (
-                      <tr key={py.id} style={styles.tr}>
-                        <td style={{ ...styles.td, fontWeight: '600' }}>{py.mustahiq?.nama_lengkap}</td>
-                        <td style={styles.td}>{py.kelompok?.nama_kelompok || 'Manual (Individu)'}</td>
-                        <td style={styles.td}><span style={styles.tagKategori}>{py.mustahiq?.kategori}</span></td>
-                        <td style={styles.td}>{py.jumlah_diterima}</td>
-                        <td style={styles.td}>
-                          <span style={styles.badgePenyaluran(py.status)}>{py.status}</span>
-                        </td>
-                        <td style={styles.td}>
-                          <div style={styles.actionGroup}>
-                            {py.status !== 'TERSALURKAN' && (
-                              <button 
-                                className="btn btn-primary" 
-                                style={{ ...styles.actionBtn, padding: '4px 8px', fontSize: '11px' }}
-                                onClick={() => handleUpdateStatus(py.id, 'TERSALURKAN')}
-                              >
-                                ✓ Salurkan
-                              </button>
-                            )}
-                            {py.status !== 'BATAL' && (
+                    {filteredPenyaluran.map(py => {
+                      const isSelected = selectedRecipientIds.includes(py.id);
+                      return (
+                        <tr key={py.id} style={{
+                          ...styles.tr,
+                          backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.04)' : undefined
+                        }}>
+                          <td style={styles.td}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedRecipientIds(prev => [...prev, py.id]);
+                                } else {
+                                  setSelectedRecipientIds(prev => prev.filter(id => id !== py.id));
+                                }
+                              }}
+                              style={{ cursor: 'pointer' }}
+                            />
+                          </td>
+                          <td style={{ ...styles.td, fontWeight: '600' }}>{py.mustahiq?.nama_lengkap}</td>
+                          <td style={styles.td}>{py.kelompok?.nama_kelompok || 'Manual (Individu)'}</td>
+                          <td style={styles.td}><span style={styles.tagKategori}>{py.mustahiq?.kategori}</span></td>
+                          <td style={styles.td}>{py.jumlah_diterima}</td>
+                          <td style={styles.td}>
+                            <span style={styles.badgePenyaluran(py.status)}>{py.status}</span>
+                          </td>
+                          <td style={styles.td}>
+                            <div style={styles.actionGroup}>
+                              {py.status !== 'TERSALURKAN' && (
+                                <button 
+                                  className="btn btn-primary" 
+                                  style={{ ...styles.actionBtn, padding: '4px 8px', fontSize: '11px' }}
+                                  onClick={() => handleUpdateStatus(py.id, 'TERSALURKAN')}
+                                >
+                                  ✓ Salurkan
+                                </button>
+                              )}
+                              {py.status !== 'BATAL' && (
+                                <button 
+                                  className="btn btn-outline" 
+                                  style={{ ...styles.actionBtn, padding: '4px 8px', fontSize: '11px', color: '#ef4444' }}
+                                  onClick={() => handleUpdateStatus(py.id, 'BATAL')}
+                                >
+                                  ✕ Batal
+                                </button>
+                              )}
                               <button 
                                 className="btn btn-outline" 
                                 style={{ ...styles.actionBtn, padding: '4px 8px', fontSize: '11px', color: '#ef4444' }}
-                                onClick={() => handleUpdateStatus(py.id, 'BATAL')}
+                                title="Keluarkan dari daftar"
+                                onClick={() => handleDeleteRecipient(py.id)}
                               >
-                                ✕ Batal
+                                🗑️
                               </button>
-                            )}
-                            <button 
-                              className="btn btn-outline" 
-                              style={{ ...styles.actionBtn, padding: '4px 8px', fontSize: '11px', color: '#ef4444' }}
-                              title="Keluarkan dari daftar"
-                              onClick={() => handleDeleteRecipient(py.id)}
-                            >
-                              🗑️
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
@@ -845,6 +918,57 @@ export default function Program() {
                 </button>
               </div>
             </div>
+
+            {/* Bulk Action Panel for Modal Recipients */}
+            {selectedRecipientIds.length > 0 && (
+              <div style={styles.floatingPanelModal}>
+                <span style={{ fontSize: '12px', color: 'hsl(var(--foreground))', fontWeight: '600' }}>
+                  Terpilih: <strong>{selectedRecipientIds.length}</strong> jiwa
+                </span>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button 
+                    type="button" 
+                    className="btn btn-primary" 
+                    style={{ padding: '6px 12px', fontSize: '11px', height: '30px', fontWeight: '700' }}
+                    onClick={() => handleBulkUpdateRecipientStatus('TERSALURKAN')}
+                  >
+                    ✓ Salurkan
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-outline" 
+                    style={{ padding: '6px 12px', fontSize: '11px', height: '30px', color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.3)' }}
+                    onClick={() => handleBulkUpdateRecipientStatus('BELUM')}
+                  >
+                    🔄 Belum
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-outline" 
+                    style={{ padding: '6px 12px', fontSize: '11px', height: '30px', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                    onClick={() => handleBulkUpdateRecipientStatus('BATAL')}
+                  >
+                    ✕ Batal
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-outline" 
+                    style={{ padding: '6px 12px', fontSize: '11px', height: '30px', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                    onClick={handleBulkDeleteRecipients}
+                  >
+                    🗑️ Hapus
+                  </button>
+                  <button 
+                    type="button" 
+                    className="btn btn-outline" 
+                    style={{ padding: '6px 12px', fontSize: '11px', height: '30px' }}
+                    onClick={() => setSelectedRecipientIds([])}
+                  >
+                    Batal
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1196,5 +1320,16 @@ const styles = {
     fontSize: '12px',
     margin: '0 8px',
     color: 'hsl(var(--muted-foreground))',
+  },
+  floatingPanelModal: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '12px 16px',
+    border: '1px solid hsl(var(--primary))',
+    borderRadius: '8px',
+    backgroundColor: 'rgba(16, 185, 129, 0.06)',
+    backdropFilter: 'blur(8px)',
+    marginTop: '12px',
   },
 };

@@ -8,6 +8,15 @@ export default function Users() {
   const [showPwdModal, setShowPwdModal] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
   
+  // Pagination States
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [userStats, setUserStats] = useState({ total: 0, admin: 0, staff: 0 });
+
   // Form States
   const [userId, setUserId] = useState('');
   const [name, setName] = useState('');
@@ -17,7 +26,6 @@ export default function Users() {
   
   // Password Reset State
   const [newPassword, setNewPassword] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
 
   // Extract currently logged-in User ID from JWT Token to prevent self-deletion
   const getLoggedInUserId = () => {
@@ -40,11 +48,36 @@ export default function Users() {
 
   const loggedInUserId = getLoggedInUserId();
 
-  const loadData = async () => {
+  // Search Debouncing
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Reset page to 1 on search
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch]);
+
+  const loadData = async (page = currentPage, limit = pageSize, search = debouncedSearch) => {
     setLoading(true);
     try {
-      const res = await ApiService.getUsers();
+      const res = await ApiService.getUsers({
+        paginate: true,
+        page,
+        limit,
+        search
+      });
       setUsers(res.data || []);
+      if (res.stats) {
+        setUserStats(res.stats);
+      }
+      if (res.pagination) {
+        setTotalPages(res.pagination.totalPages || 1);
+        setTotalItems(res.pagination.totalItems || 0);
+      }
     } catch (e) {
       console.error('Failed to load user list:', e);
     } finally {
@@ -53,8 +86,8 @@ export default function Users() {
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData(currentPage, pageSize, debouncedSearch);
+  }, [currentPage, pageSize, debouncedSearch]);
 
   const handleOpenAdd = () => {
     setIsEdit(false);
@@ -81,10 +114,19 @@ export default function Users() {
     setShowPwdModal(true);
   };
 
+  const isStrongPassword = (pwd) => {
+    const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    return regex.test(pwd);
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (!name.trim() || !email.trim()) return alert('Nama dan Email wajib diisi.');
     if (!isEdit && !password.trim()) return alert('Password wajib diisi.');
+
+    if (!isEdit && !isStrongPassword(password)) {
+      return alert('Kata sandi kurang kuat. Harus minimal 8 karakter dan mengandung huruf besar, huruf kecil, angka, serta karakter khusus (seperti @$!%*?&).');
+    }
 
     try {
       if (isEdit) {
@@ -95,7 +137,7 @@ export default function Users() {
         alert('Pengguna baru berhasil dibuat.');
       }
       setShowModal(false);
-      loadData();
+      loadData(currentPage, pageSize, debouncedSearch);
     } catch (err) {
       alert('Gagal menyimpan: ' + err.message);
     }
@@ -104,6 +146,9 @@ export default function Users() {
   const handleResetPasswordSubmit = async (e) => {
     e.preventDefault();
     if (!newPassword.trim()) return alert('Password baru wajib diisi.');
+    if (!isStrongPassword(newPassword)) {
+      return alert('Kata sandi kurang kuat. Harus minimal 8 karakter dan mengandung huruf besar, huruf kecil, angka, serta karakter khusus (seperti @$!%*?&).');
+    }
     try {
       await ApiService.updateUser(userId, { password: newPassword });
       alert('Password pengguna berhasil diubah.');
@@ -130,23 +175,18 @@ export default function Users() {
     try {
       await ApiService.deleteUser(u.id);
       alert('Pengguna berhasil dihapus.');
-      loadData();
+      loadData(currentPage, pageSize, debouncedSearch);
     } catch (err) {
       alert('Gagal menghapus: ' + err.message);
     }
   };
 
-  // Calculate statistics
-  const totalUsers = users.length;
-  const adminCount = users.filter(u => u.role === 'ADMIN').length;
-  const staffCount = users.filter(u => u.role === 'PETUGAS').length;
+  // Calculate statistics from server-side data
+  const totalUsers = userStats.total;
+  const adminCount = userStats.admin;
+  const staffCount = userStats.staff;
 
-  // Filter users based on search
-  const filteredUsers = users.filter(u => {
-    return (u.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-           (u.email || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-           (u.role || '').toLowerCase().includes(searchQuery.toLowerCase());
-  });
+  const filteredUsers = users;
 
   return (
     <div style={styles.container}>
@@ -258,6 +298,93 @@ export default function Users() {
             </table>
           </div>
         )}
+        {!loading && users.length > 0 && (
+          <div style={styles.paginationFooter}>
+            <div style={styles.paginationLimit}>
+              <span style={styles.paginationLabel}>Tampilkan:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(parseInt(e.target.value, 10));
+                  setCurrentPage(1);
+                }}
+                style={styles.pageSizeSelect}
+              >
+                <option value={10}>10 Baris</option>
+                <option value={25}>25 Baris</option>
+                <option value={50}>50 Baris</option>
+              </select>
+            </div>
+
+            <div style={styles.paginationInfo}>
+              Menampilkan <strong>{Math.min((currentPage - 1) * pageSize + 1, totalItems)}</strong> - <strong>{Math.min(currentPage * pageSize, totalItems)}</strong> dari <strong>{totalItems}</strong> pengguna
+            </div>
+
+            <div style={styles.paginationNav}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(1)}
+                style={{
+                  padding: '4px 8px',
+                  opacity: currentPage === 1 ? 0.4 : 1,
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+                title="Halaman Pertama"
+              >
+                ⏮️
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                style={{
+                  padding: '4px 8px',
+                  opacity: currentPage === 1 ? 0.4 : 1,
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+                title="Sebelumnya"
+              >
+                ◀️
+              </button>
+              
+              <span style={styles.pageIndicator}>
+                Hal <strong>{currentPage}</strong> dari <strong>{totalPages}</strong>
+              </span>
+
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                style={{
+                  padding: '4px 8px',
+                  opacity: currentPage === totalPages ? 0.4 : 1,
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                }}
+                title="Selanjutnya"
+              >
+                ▶️
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(totalPages)}
+                style={{
+                  padding: '4px 8px',
+                  opacity: currentPage === totalPages ? 0.4 : 1,
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                }}
+                title="Halaman Terakhir"
+              >
+                ⏭️
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* MODAL: ADD / EDIT USER */}
@@ -297,11 +424,14 @@ export default function Users() {
                   <input
                     type="password"
                     className="input"
-                    placeholder="Minimal 6 karakter"
+                    placeholder="Minimal 8 karakter"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                   />
+                  <span style={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))', marginTop: '2px', lineHeight: '1.3' }}>
+                    * Minimal 8 karakter, wajib kombinasi huruf besar (A-Z), huruf kecil (a-z), angka (0-9), dan karakter khusus (@$!%*?&).
+                  </span>
                 </div>
               )}
 
@@ -343,6 +473,9 @@ export default function Users() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   required
                 />
+                <span style={{ fontSize: '10px', color: 'hsl(var(--muted-foreground))', marginTop: '2px', lineHeight: '1.3' }}>
+                  * Minimal 8 karakter, wajib kombinasi huruf besar (A-Z), huruf kecil (a-z), angka (0-9), dan karakter khusus (@$!%*?&).
+                </span>
               </div>
 
               <div style={styles.modalFooter}>
@@ -517,5 +650,48 @@ const styles = {
     justifyContent: 'flex-end',
     gap: '10px',
     marginTop: '10px',
+  },
+  paginationFooter: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '16px 20px',
+    borderTop: '1px solid hsl(var(--border))',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    flexWrap: 'wrap',
+    gap: '12px',
+  },
+  paginationLimit: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  paginationLabel: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+  },
+  pageSizeSelect: {
+    padding: '6px 12px',
+    fontSize: '12px',
+    borderRadius: '6px',
+    border: '1px solid hsl(var(--border))',
+    backgroundColor: 'hsl(var(--background))',
+    color: 'hsl(var(--foreground))',
+    outline: 'none',
+    cursor: 'pointer',
+  },
+  paginationInfo: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+  },
+  paginationNav: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  pageIndicator: {
+    fontSize: '12px',
+    margin: '0 8px',
+    color: 'hsl(var(--muted-foreground))',
   },
 };

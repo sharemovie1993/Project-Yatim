@@ -6,6 +6,17 @@ export default function Kelompok() {
   const [loading, setLoading] = useState(true);
   const [singleGroupRestriction, setSingleGroupRestriction] = useState(false);
   
+  // Pagination States
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [wilayahQuery, setWilayahQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [debouncedWilayah, setDebouncedWilayah] = useState('');
+  const [stats, setStats] = useState({ totalGroups: 0, totalMembers: 0, averageMembers: '0' });
+
   // Unified Group Modal state (for Add & Edit)
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -22,12 +33,44 @@ export default function Kelompok() {
   const [members, setMembers] = useState([]);
   const [allMustahiqs, setAllMustahiqs] = useState([]);
   const [memberSearch, setMemberSearch] = useState('');
+  const [selectedMustahiqIds, setSelectedMustahiqIds] = useState([]);
 
-  const loadData = async () => {
+  // Search Debouncing
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedWilayah(wilayahQuery);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [wilayahQuery]);
+
+  // Reset page to 1 when search query changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, debouncedWilayah]);
+
+  const loadData = async (page = currentPage, limit = pageSize, search = debouncedSearch, wilayah = debouncedWilayah) => {
     setLoading(true);
     try {
-      const res = await ApiService.getKelompok();
+      const res = await ApiService.getKelompok({
+        paginate: true,
+        page,
+        limit,
+        search,
+        wilayah
+      });
       setGroups(res.data || []);
+      setStats(res.stats || { totalGroups: 0, totalMembers: 0, averageMembers: '0' });
+      if (res.pagination) {
+        setTotalPages(res.pagination.totalPages || 1);
+        setTotalItems(res.pagination.totalItems || 0);
+      }
 
       // Load single group restriction rule from tenant profile settings
       const profile = await ApiService.getTenantProfile();
@@ -41,8 +84,8 @@ export default function Kelompok() {
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData(currentPage, pageSize, debouncedSearch, debouncedWilayah);
+  }, [currentPage, pageSize, debouncedSearch, debouncedWilayah]);
 
   const handleOpenAdd = () => {
     setIsEdit(false);
@@ -84,7 +127,7 @@ export default function Kelompok() {
         alert('Kelompok baru berhasil ditambahkan.');
       }
       setShowGroupModal(false);
-      loadData();
+      loadData(currentPage, pageSize, debouncedSearch, debouncedWilayah);
     } catch (err) {
       alert('Gagal menyimpan kelompok: ' + err.message);
     }
@@ -95,7 +138,7 @@ export default function Kelompok() {
     try {
       await ApiService.deleteKelompok(id);
       alert('Kelompok berhasil dihapus.');
-      loadData();
+      loadData(currentPage, pageSize, debouncedSearch, debouncedWilayah);
     } catch (err) {
       alert('Gagal menghapus kelompok: ' + err.message);
     }
@@ -104,6 +147,8 @@ export default function Kelompok() {
   const handleOpenMembers = async (g) => {
     setSelectedGroup(g);
     setLoading(true);
+    setSelectedMustahiqIds([]);
+    setMemberSearch('');
     try {
       // Get current members
       const mRes = await ApiService.getAnggotaKelompok(g.id);
@@ -121,17 +166,22 @@ export default function Kelompok() {
     }
   };
 
-  const handleAddMember = async (mustahiqId) => {
+  const handleBulkAddMembers = async () => {
+    if (selectedMustahiqIds.length === 0) return alert('Pilih minimal satu mustahiq.');
+    setLoading(true);
     try {
-      await ApiService.addAnggotaKelompok(selectedGroup.id, [mustahiqId]);
+      await ApiService.addAnggotaKelompok(selectedGroup.id, selectedMustahiqIds);
       // Reload members
       const mRes = await ApiService.getAnggotaKelompok(selectedGroup.id);
       setMembers(mRes.data || []);
+      // Reset selected list
+      setSelectedMustahiqIds([]);
       // Reload groups list to update count badges in background
-      const gRes = await ApiService.getKelompok();
-      setGroups(gRes.data || []);
+      loadData(currentPage, pageSize, debouncedSearch, debouncedWilayah);
     } catch (err) {
       alert('Gagal menambah anggota: ' + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -143,8 +193,7 @@ export default function Kelompok() {
       const mRes = await ApiService.getAnggotaKelompok(selectedGroup.id);
       setMembers(mRes.data || []);
       // Reload groups list to update count badges in background
-      const gRes = await ApiService.getKelompok();
-      setGroups(gRes.data || []);
+      loadData(currentPage, pageSize, debouncedSearch, debouncedWilayah);
     } catch (err) {
       alert('Gagal mengeluarkan anggota: ' + err.message);
     }
@@ -164,9 +213,9 @@ export default function Kelompok() {
     return !isMember && !isMemberOfAnyOtherGroup && matchSearch;
   });
 
-  // Calculate statistics
-  const totalGroups = groups.length;
-  const totalDistributed = groups.reduce((acc, g) => acc + (g._count?.anggota || 0), 0);
+  // Calculate statistics from backend stats
+  const totalGroups = stats.totalGroups;
+  const totalDistributed = stats.totalMembers;
   const averageMembers = totalGroups > 0 ? (totalDistributed / totalGroups).toFixed(1) : '0';
 
   return (
@@ -201,11 +250,33 @@ export default function Kelompok() {
         </div>
       </div>
 
+      {/* Search Filter Toolbar */}
+      <div style={styles.searchContainer}>
+        <input
+          type="text"
+          className="input"
+          placeholder="🔍 Cari nama kelompok..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          style={styles.searchInput}
+        />
+        <input
+          type="text"
+          className="input"
+          placeholder="📍 Cari wilayah cakupan..."
+          value={wilayahQuery}
+          onChange={(e) => setWilayahQuery(e.target.value)}
+          style={styles.searchInput}
+        />
+      </div>
+
       <div style={styles.grid}>
         {loading && !showMemberModal && !showGroupModal ? (
           <div style={styles.centerText}>Memuat data kelompok...</div>
         ) : groups.length === 0 ? (
-          <div style={styles.centerText}>Belum ada kelompok terdaftar.</div>
+          <div style={styles.centerText}>
+            {totalItems === 0 ? 'Belum ada kelompok terdaftar.' : 'Tidak ditemukan kelompok yang cocok.'}
+          </div>
         ) : (
           groups.map(g => (
             <div className="card glass" key={g.id} style={styles.groupCard}>
@@ -227,6 +298,95 @@ export default function Kelompok() {
           ))
         )}
       </div>
+
+      {/* Pagination Control Footer */}
+      {!loading && groups.length > 0 && (
+        <div style={styles.paginationFooter}>
+          <div style={styles.paginationLimit}>
+            <span style={styles.paginationLabel}>Tampilkan:</span>
+            <select
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(parseInt(e.target.value, 10));
+                setCurrentPage(1);
+              }}
+              style={styles.pageSizeSelect}
+            >
+              <option value={10}>10 Kelompok</option>
+              <option value={25}>25 Kelompok</option>
+              <option value={50}>50 Kelompok</option>
+            </select>
+          </div>
+
+          <div style={styles.paginationInfo}>
+            Menampilkan <strong>{Math.min((currentPage - 1) * pageSize + 1, totalItems)}</strong> - <strong>{Math.min(currentPage * pageSize, totalItems)}</strong> dari <strong>{totalItems}</strong> kelompok
+          </div>
+
+          <div style={styles.paginationNav}>
+            <button
+              type="button"
+              className="btn btn-outline"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(1)}
+              style={{
+                padding: '4px 8px',
+                opacity: currentPage === 1 ? 0.4 : 1,
+                cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+              }}
+              title="Halaman Pertama"
+            >
+              ⏮️
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+              style={{
+                padding: '4px 8px',
+                opacity: currentPage === 1 ? 0.4 : 1,
+                cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+              }}
+              title="Sebelumnya"
+            >
+              ◀️
+            </button>
+            
+            <span style={styles.pageIndicator}>
+              Hal <strong>{currentPage}</strong> dari <strong>{totalPages}</strong>
+            </span>
+
+            <button
+              type="button"
+              className="btn btn-outline"
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+              style={{
+                padding: '4px 8px',
+                opacity: currentPage === totalPages ? 0.4 : 1,
+                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+              }}
+              title="Selanjutnya"
+            >
+              ▶️
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline"
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage(totalPages)}
+              style={{
+                padding: '4px 8px',
+                opacity: currentPage === totalPages ? 0.4 : 1,
+                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+              }}
+              title="Halaman Terakhir"
+            >
+              ⏭️
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Add / Edit Group Modal */}
       {showGroupModal && (
@@ -333,7 +493,32 @@ export default function Kelompok() {
 
               {/* Right Column: Add New Members */}
               <div style={styles.splitCol}>
-                <h4 style={styles.sectionTitle}>Tambah Anggota Baru</h4>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+                  <h4 style={{ ...styles.sectionTitle, borderBottom: 'none', paddingBottom: 0, margin: 0 }}>Tambah Anggota Baru</h4>
+                  {availableMustahiqs.length > 0 && (
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer', userSelect: 'none', color: 'hsl(var(--muted-foreground))' }}>
+                      <input
+                        type="checkbox"
+                        checked={availableMustahiqs.length > 0 && availableMustahiqs.every(m => selectedMustahiqIds.includes(m.id))}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedMustahiqIds(prev => {
+                              const newIds = [...prev];
+                              availableMustahiqs.forEach(m => {
+                                if (!newIds.includes(m.id)) newIds.push(m.id);
+                              });
+                              return newIds;
+                            });
+                          } else {
+                            setSelectedMustahiqIds(prev => prev.filter(id => !availableMustahiqs.some(m => m.id === id)));
+                          }
+                        }}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      Pilih Semua
+                    </label>
+                  )}
+                </div>
                 <input
                   type="text"
                   className="input"
@@ -350,36 +535,84 @@ export default function Kelompok() {
                       const otherGroups = m.anggota && m.anggota.length > 0
                         ? m.anggota.map(a => a.kelompok?.nama_kelompok).filter(Boolean).join(', ')
                         : null;
+                      const isSelected = selectedMustahiqIds.includes(m.id);
                       return (
-                        <div key={m.id} style={styles.memberItem}>
-                          <div>
-                            <p style={styles.memberName}>{m.nama_lengkap}</p>
-                            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap' }}>
-                              <span style={styles.memberTag}>{m.kategori}</span>
-                              {otherGroups && (
-                                <span style={{
-                                  fontSize: '10px',
-                                  backgroundColor: 'rgba(245, 158, 11, 0.12)',
-                                  border: '1px solid rgba(245, 158, 11, 0.25)',
-                                  color: '#f59e0b',
-                                  padding: '1px 6px',
-                                  borderRadius: '4px',
-                                  fontWeight: '700',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: '3px'
-                                }}>
-                                  📌 {otherGroups}
-                                </span>
-                              )}
+                        <div
+                          key={m.id}
+                          style={{
+                            ...styles.memberItem,
+                            backgroundColor: isSelected ? 'rgba(16, 185, 129, 0.04)' : 'hsl(var(--card))',
+                            borderColor: isSelected ? 'hsl(var(--primary))' : 'hsl(var(--border))',
+                            cursor: 'pointer'
+                          }}
+                          onClick={() => {
+                            setSelectedMustahiqIds(prev =>
+                              prev.includes(m.id) ? prev.filter(id => id !== m.id) : [...prev, m.id]
+                            );
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}} // handled by row click
+                              style={{ cursor: 'pointer' }}
+                            />
+                            <div>
+                              <p style={styles.memberName}>{m.nama_lengkap}</p>
+                              <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px', flexWrap: 'wrap' }}>
+                                <span style={styles.memberTag}>{m.kategori}</span>
+                                {otherGroups && (
+                                  <span style={{
+                                    fontSize: '10px',
+                                    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+                                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                                    color: '#f59e0b',
+                                    padding: '1px 6px',
+                                    borderRadius: '4px',
+                                    fontWeight: '700',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '3px'
+                                  }}>
+                                    📌 {otherGroups}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
-                          <button className="btn btn-primary" style={styles.addBtn} onClick={() => handleAddMember(m.id)}>➕ Tambah</button>
                         </div>
                       );
                     })
                   )}
                 </div>
+
+                {/* Bulk Add Floating/Mini Panel inside Modal */}
+                {selectedMustahiqIds.length > 0 && (
+                  <div style={styles.floatingPanelModal}>
+                    <span style={{ fontSize: '12px', fontWeight: '600', color: 'hsl(var(--foreground))' }}>
+                      <strong>{selectedMustahiqIds.length}</strong> jiwa terpilih
+                    </span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        style={{ padding: '6px 12px', fontSize: '11px', height: '30px' }}
+                        onClick={() => setSelectedMustahiqIds([])}
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{ padding: '6px 12px', fontSize: '11px', height: '30px', fontWeight: '700' }}
+                        onClick={handleBulkAddMembers}
+                      >
+                        ➕ Tambah Terpilih
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -641,5 +874,71 @@ const styles = {
     fontSize: '12px',
     padding: '20px 0',
     margin: 0,
+  },
+  searchContainer: {
+    display: 'flex',
+    gap: '12px',
+    alignItems: 'center',
+    marginBottom: '20px',
+  },
+  searchInput: {
+    maxWidth: '300px',
+    height: '38px',
+    width: '100%',
+  },
+  paginationFooter: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '16px 20px',
+    borderTop: '1px solid hsl(var(--border))',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    flexWrap: 'wrap',
+    gap: '12px',
+    marginTop: '20px',
+  },
+  paginationLimit: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  paginationLabel: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+  },
+  pageSizeSelect: {
+    padding: '6px 12px',
+    fontSize: '12px',
+    borderRadius: '6px',
+    border: '1px solid hsl(var(--border))',
+    backgroundColor: 'hsl(var(--background))',
+    color: 'hsl(var(--foreground))',
+    outline: 'none',
+    cursor: 'pointer',
+  },
+  paginationInfo: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+  },
+  paginationNav: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  pageIndicator: {
+    fontSize: '12px',
+    margin: '0 8px',
+    color: 'hsl(var(--muted-foreground))',
+  },
+  floatingPanelModal: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '12px 16px',
+    border: '1px solid hsl(var(--primary))',
+    borderRadius: '8px',
+    backgroundColor: 'rgba(16, 185, 129, 0.06)',
+    backdropFilter: 'blur(8px)',
+    marginTop: '12px',
   },
 };

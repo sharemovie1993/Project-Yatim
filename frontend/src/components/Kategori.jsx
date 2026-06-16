@@ -10,12 +10,52 @@ export default function Kategori() {
   const [namaKategori, setNamaKategori] = useState('');
   const [keterangan, setKeterangan] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
 
-  const loadData = async () => {
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+
+  // Category stats state
+  const [categoryStats, setCategoryStats] = useState({
+    totalCategories: 0,
+    popularCategoryName: '-',
+    maxCount: 0,
+    totalMustahiqsCategorized: 0
+  });
+
+  // Search Debouncing
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Reset page to 1 when search changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch]);
+
+  const loadData = async (page = currentPage, limit = pageSize, search = debouncedSearch) => {
     setLoading(true);
     try {
-      const res = await ApiService.getKategori();
+      const res = await ApiService.getKategori({
+        paginate: true,
+        page,
+        limit,
+        search
+      });
       setCategories(res.data || []);
+      if (res.stats) {
+        setCategoryStats(res.stats);
+      }
+      if (res.pagination) {
+        setTotalPages(res.pagination.totalPages || 1);
+        setTotalItems(res.pagination.totalItems || 0);
+      }
     } catch (e) {
       console.error('Failed to load category data:', e);
     } finally {
@@ -24,8 +64,8 @@ export default function Kategori() {
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData(currentPage, pageSize, debouncedSearch);
+  }, [currentPage, pageSize, debouncedSearch]);
 
   const handleOpenAdd = () => {
     setIsEdit(false);
@@ -44,17 +84,24 @@ export default function Kategori() {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    if (!namaKategori.trim()) return alert('Nama kategori wajib diisi.');
+    const cleanName = namaKategori.trim().toUpperCase();
+    if (!cleanName) return alert('Nama kategori wajib diisi.');
+
+    const slugRegex = /^[A-Z0-9_]+$/;
+    if (!slugRegex.test(cleanName)) {
+      return alert('Nama kategori hanya boleh berisi huruf besar, angka, dan garis bawah (contoh: YATIM_NON_PANTI).');
+    }
+
     try {
       if (isEdit) {
-        await ApiService.updateKategori(editId, { nama_kategori: namaKategori, keterangan });
+        await ApiService.updateKategori(editId, { nama_kategori: cleanName, keterangan });
         alert('Kategori berhasil diperbarui.');
       } else {
-        await ApiService.addKategori(namaKategori, keterangan);
+        await ApiService.addKategori(cleanName, keterangan);
         alert('Kategori baru berhasil ditambahkan.');
       }
       setShowModal(false);
-      loadData();
+      loadData(currentPage, pageSize, debouncedSearch);
     } catch (err) {
       alert('Gagal menyimpan: ' + err.message);
     }
@@ -65,31 +112,19 @@ export default function Kategori() {
     try {
       await ApiService.deleteKategori(id);
       alert('Kategori terhapus.');
-      loadData();
+      loadData(currentPage, pageSize, debouncedSearch);
     } catch (err) {
       alert('Gagal menghapus: ' + err.message);
     }
   };
 
-  // Calculate statistics for categories
-  const totalCategories = categories.length;
-  
-  let popularCategoryName = '-';
-  let maxCount = 0;
-  categories.forEach(c => {
-    if ((c.mustahiq_count || 0) > maxCount) {
-      maxCount = c.mustahiq_count;
-      popularCategoryName = c.nama_kategori;
-    }
-  });
-  
-  const totalMustahiqsCategorized = categories.reduce((acc, c) => acc + (c.mustahiq_count || 0), 0);
+  // Stats from backend state
+  const totalCategories = categoryStats.totalCategories;
+  const popularCategoryName = categoryStats.popularCategoryName;
+  const maxCount = categoryStats.maxCount;
+  const totalMustahiqsCategorized = categoryStats.totalMustahiqsCategorized;
 
-  // Filter categories
-  const filteredCategories = categories.filter(c => {
-    return c.nama_kategori.toLowerCase().includes(searchQuery.toLowerCase()) ||
-           (c.keterangan || '').toLowerCase().includes(searchQuery.toLowerCase());
-  });
+  const filteredCategories = categories;
 
   return (
     <div style={styles.container}>
@@ -175,6 +210,93 @@ export default function Kategori() {
             </table>
           </div>
         )}
+        {!loading && categories.length > 0 && (
+          <div style={styles.paginationFooter}>
+            <div style={styles.paginationLimit}>
+              <span style={styles.paginationLabel}>Tampilkan:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(parseInt(e.target.value, 10));
+                  setCurrentPage(1);
+                }}
+                style={styles.pageSizeSelect}
+              >
+                <option value={10}>10 Baris</option>
+                <option value={25}>25 Baris</option>
+                <option value={50}>50 Baris</option>
+              </select>
+            </div>
+
+            <div style={styles.paginationInfo}>
+              Menampilkan <strong>{Math.min((currentPage - 1) * pageSize + 1, totalItems)}</strong> - <strong>{Math.min(currentPage * pageSize, totalItems)}</strong> dari <strong>{totalItems}</strong> kategori
+            </div>
+
+            <div style={styles.paginationNav}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(1)}
+                style={{
+                  padding: '4px 8px',
+                  opacity: currentPage === 1 ? 0.4 : 1,
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+                title="Halaman Pertama"
+              >
+                ⏮️
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                style={{
+                  padding: '4px 8px',
+                  opacity: currentPage === 1 ? 0.4 : 1,
+                  cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                }}
+                title="Sebelumnya"
+              >
+                ◀️
+              </button>
+              
+              <span style={styles.pageIndicator}>
+                Hal <strong>{currentPage}</strong> dari <strong>{totalPages}</strong>
+              </span>
+
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                style={{
+                  padding: '4px 8px',
+                  opacity: currentPage === totalPages ? 0.4 : 1,
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                }}
+                title="Selanjutnya"
+              >
+                ▶️
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(totalPages)}
+                style={{
+                  padding: '4px 8px',
+                  opacity: currentPage === totalPages ? 0.4 : 1,
+                  cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                }}
+                title="Halaman Terakhir"
+              >
+                ⏭️
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {showModal && (
@@ -192,6 +314,9 @@ export default function Kategori() {
                   onChange={(e) => setNamaKategori(e.target.value)}
                   required
                 />
+                <span style={{ fontSize: '10.5px', color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
+                  * Hanya boleh huruf besar, angka, dan garis bawah/underscore (A-Z, 0-9, _).
+                </span>
               </div>
 
               <div style={styles.inputGroup}>
@@ -358,5 +483,48 @@ const styles = {
     justifyContent: 'flex-end',
     gap: '10px',
     marginTop: '12px',
+  },
+  paginationFooter: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '16px 20px',
+    borderTop: '1px solid hsl(var(--border))',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    flexWrap: 'wrap',
+    gap: '12px',
+  },
+  paginationLimit: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  paginationLabel: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+  },
+  pageSizeSelect: {
+    padding: '6px 12px',
+    fontSize: '12px',
+    borderRadius: '6px',
+    border: '1px solid hsl(var(--border))',
+    backgroundColor: 'hsl(var(--background))',
+    color: 'hsl(var(--foreground))',
+    outline: 'none',
+    cursor: 'pointer',
+  },
+  paginationInfo: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+  },
+  paginationNav: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  pageIndicator: {
+    fontSize: '12px',
+    margin: '0 8px',
+    color: 'hsl(var(--muted-foreground))',
   },
 };

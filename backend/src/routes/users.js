@@ -8,21 +8,87 @@ function hashPassword(password) {
   return crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
 }
 
+function isStrongPassword(password) {
+  // Min 8 characters, at least 1 uppercase, 1 lowercase, 1 number, 1 special character
+  const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+  return regex.test(password);
+}
+
 // GET /api/v1/users - Retrieve all users for the current tenant
 router.get('/', async (req, res) => {
   try {
     const tenantId = req.headers['x-tenant-id'];
-    const users = await prisma.user.findMany({
-      where: { tenant_id: tenantId },
-      select: {
-        id: true,
-        email: true,
-        name: true,
-        role: true,
-        tenant_id: true
-      }
-    });
-    res.json({ success: true, data: users });
+    const { page, limit, paginate, search } = req.query;
+    const where = { tenant_id: tenantId };
+
+    if (search) {
+      const searchStr = String(search).trim();
+      where.OR = [
+        { name: { contains: searchStr } },
+        { email: { contains: searchStr } }
+      ];
+    }
+
+    const [totalUsers, adminCount, staffCount] = await Promise.all([
+      prisma.user.count({ where: { tenant_id: tenantId } }),
+      prisma.user.count({ where: { tenant_id: tenantId, role: 'ADMIN' } }),
+      prisma.user.count({ where: { tenant_id: tenantId, role: 'PETUGAS' } })
+    ]);
+
+    const stats = {
+      total: totalUsers,
+      admin: adminCount,
+      staff: staffCount
+    };
+
+    const isPaginated = paginate === 'true' || page !== undefined;
+
+    if (isPaginated) {
+      const pageNum = parseInt(page, 10) || 1;
+      const limitNum = parseInt(limit, 10) || 10;
+      const skipNum = (pageNum - 1) * limitNum;
+
+      const totalItems = await prisma.user.count({ where });
+      const data = await prisma.user.findMany({
+        where,
+        skip: skipNum,
+        take: limitNum,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          tenant_id: true
+        },
+        orderBy: { name: 'asc' }
+      });
+
+      res.json({
+        success: true,
+        data,
+        stats,
+        pagination: {
+          totalItems,
+          totalPages: Math.ceil(totalItems / limitNum),
+          currentPage: pageNum,
+          limit: limitNum
+        }
+      });
+    } else {
+      const data = await prisma.user.findMany({
+        where,
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          role: true,
+          tenant_id: true
+        },
+        orderBy: { name: 'asc' }
+      });
+
+      res.json({ success: true, data, stats });
+    }
   } catch (error) {
     console.error('[Get Users Error]', error);
     res.status(500).json({ success: false, error: error.message });
@@ -42,6 +108,13 @@ router.post('/', async (req, res) => {
     const roleUpper = role.toUpperCase();
     if (roleUpper !== 'ADMIN' && roleUpper !== 'PETUGAS') {
       return res.status(400).json({ success: false, error: 'Role tidak valid. Harus ADMIN atau PETUGAS.' });
+    }
+
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Kata sandi kurang kuat. Harus minimal 8 karakter dan mengandung huruf besar, huruf kecil, angka, serta karakter khusus (seperti @$!%*?&).'
+      });
     }
 
     const emailClean = email.toLowerCase().trim();
@@ -90,7 +163,16 @@ router.put('/:id', async (req, res) => {
 
     const updateData = {};
     if (name) updateData.name = name.trim();
-    if (password) updateData.password = hashPassword(password);
+    
+    if (password) {
+      if (!isStrongPassword(password)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Kata sandi kurang kuat. Harus minimal 8 karakter dan mengandung huruf besar, huruf kecil, angka, serta karakter khusus (seperti @$!%*?&).'
+        });
+      }
+      updateData.password = hashPassword(password);
+    }
     
     if (role) {
       const roleUpper = role.toUpperCase();

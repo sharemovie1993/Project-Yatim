@@ -19,17 +19,73 @@ router.get('/', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
     }
 
-    const data = await prisma.kelompok.findMany({
-      where: { tenant_id: tenantId },
-      include: {
-        _count: {
-          select: { anggota: true }
+    const { page, limit, paginate, search, wilayah } = req.query;
+    const where = { tenant_id: tenantId };
+
+    if (search) {
+      where.nama_kelompok = { contains: String(search).trim() };
+    }
+
+    if (wilayah) {
+      where.wilayah = { contains: String(wilayah).trim() };
+    }
+
+    // Overall stats for this tenant's groups
+    const [totalGroupsCount, totalMembersCount] = await Promise.all([
+      prisma.kelompok.count({ where: { tenant_id: tenantId } }),
+      prisma.anggotaKelompok.count({ where: { tenant_id: tenantId } })
+    ]);
+
+    const stats = {
+      totalGroups: totalGroupsCount,
+      totalMembers: totalMembersCount,
+      averageMembers: totalGroupsCount > 0 ? (totalMembersCount / totalGroupsCount).toFixed(1) : '0'
+    };
+
+    const isPaginated = paginate === 'true' || page !== undefined;
+
+    if (isPaginated) {
+      const pageNum = parseInt(page, 10) || 1;
+      const limitNum = parseInt(limit, 10) || 10;
+      const skipNum = (pageNum - 1) * limitNum;
+
+      const totalItems = await prisma.kelompok.count({ where });
+      const data = await prisma.kelompok.findMany({
+        where,
+        skip: skipNum,
+        take: limitNum,
+        include: {
+          _count: {
+            select: { anggota: true }
+          }
+        },
+        orderBy: { nama_kelompok: 'asc' }
+      });
+
+      res.json({
+        success: true,
+        data,
+        stats,
+        pagination: {
+          totalItems,
+          totalPages: Math.ceil(totalItems / limitNum),
+          currentPage: pageNum,
+          limit: limitNum
         }
-      },
-      orderBy: { nama_kelompok: 'asc' }
-    });
-    
-    res.json({ success: true, data });
+      });
+    } else {
+      const data = await prisma.kelompok.findMany({
+        where,
+        include: {
+          _count: {
+            select: { anggota: true }
+          }
+        },
+        orderBy: { nama_kelompok: 'asc' }
+      });
+
+      res.json({ success: true, data, stats });
+    }
   } catch (error) {
     console.error('[GET Kelompok Error]', error);
     res.status(500).json({ success: false, error: error.message });

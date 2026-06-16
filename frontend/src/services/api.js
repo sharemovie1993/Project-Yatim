@@ -170,8 +170,15 @@ class ApiService {
   }
 
   // Kategori CRUD
-  static async getKategori() {
-    return this.request('/v1/kategori');
+  static async getKategori(params = {}) {
+    const query = new URLSearchParams();
+    if (params.paginate !== undefined) query.append('paginate', params.paginate);
+    if (params.page !== undefined) query.append('page', params.page);
+    if (params.limit !== undefined) query.append('limit', params.limit);
+    if (params.search !== undefined) query.append('search', params.search);
+
+    const queryString = query.toString();
+    return this.request(`/v1/kategori${queryString ? `?${queryString}` : ''}`);
   }
 
   static async addKategori(nama_kategori, keterangan) {
@@ -195,8 +202,16 @@ class ApiService {
   }
 
   // Kelompok CRUD & Anggota
-  static async getKelompok() {
-    return this.request('/v1/kelompok');
+  static async getKelompok(params = {}) {
+    const query = new URLSearchParams();
+    if (params.paginate !== undefined) query.append('paginate', params.paginate);
+    if (params.page !== undefined) query.append('page', params.page);
+    if (params.limit !== undefined) query.append('limit', params.limit);
+    if (params.search !== undefined) query.append('search', params.search);
+    if (params.wilayah !== undefined) query.append('wilayah', params.wilayah);
+
+    const queryString = query.toString();
+    return this.request(`/v1/kelompok${queryString ? `?${queryString}` : ''}`);
   }
 
   static async addKelompok(nama_kelompok, keterangan, wilayah) {
@@ -300,6 +315,20 @@ class ApiService {
     });
   }
 
+  static async bulkUpdateStatusPenyaluran(programId, ids, status) {
+    return this.request(`/v1/program/${programId}/penyaluran/bulk-status`, {
+      method: 'POST',
+      body: JSON.stringify({ ids, status }),
+    });
+  }
+
+  static async bulkDeletePenyaluran(programId, ids) {
+    return this.request(`/v1/program/${programId}/penyaluran/bulk-delete`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  }
+
   static async updateStatusPenyaluran(penyaluranId, status, details = {}) {
     return this.request(`/v1/program/penyaluran/${penyaluranId}`, {
       method: 'PUT',
@@ -369,8 +398,15 @@ class ApiService {
   }
 
   // User Management
-  static async getUsers() {
-    return this.request('/v1/users');
+  static async getUsers(params = {}) {
+    const query = new URLSearchParams();
+    if (params.paginate !== undefined) query.append('paginate', params.paginate);
+    if (params.page !== undefined) query.append('page', params.page);
+    if (params.limit !== undefined) query.append('limit', params.limit);
+    if (params.search !== undefined) query.append('search', params.search);
+
+    const queryString = query.toString();
+    return this.request(`/v1/users${queryString ? `?${queryString}` : ''}`);
   }
 
   static async createUser(payload) {

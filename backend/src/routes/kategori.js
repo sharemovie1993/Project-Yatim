@@ -14,12 +14,9 @@ router.get('/', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
     }
 
-    let data = await prisma.kategori.findMany({
-      where: { tenant_id: tenantId },
-      orderBy: { nama_kategori: 'asc' }
-    });
-    
-    if (data.length === 0) {
+    // Populate defaults if none exist
+    const countExist = await prisma.kategori.count({ where: { tenant_id: tenantId } });
+    if (countExist === 0) {
       const defaults = [
         { nama_kategori: 'YATIM', keterangan: 'Anak yatim yang kehilangan ayah' },
         { nama_kategori: 'PIATU', keterangan: 'Anak piatu yang kehilangan ibu' },
@@ -39,35 +36,101 @@ router.get('/', async (req, res) => {
           })
         )
       );
-      
-      data = await prisma.kategori.findMany({
-        where: { tenant_id: tenantId },
-        orderBy: { nama_kategori: 'asc' }
-      });
     }
 
-    // Fetch counts of mustahiq grouped by kategori
-    const counts = await prisma.mustahiq.groupBy({
-      by: ['kategori'],
-      where: { tenant_id: tenantId },
-      _count: {
-        id: true
+    const { page, limit, paginate, search } = req.query;
+    const where = { tenant_id: tenantId };
+
+    if (search) {
+      const searchStr = String(search).trim();
+      where.OR = [
+        { nama_kategori: { contains: searchStr } },
+        { keterangan: { contains: searchStr } }
+      ];
+    }
+
+    // Overall stats for categories of this tenant
+    const [totalCategoriesCount, allMustahiqGrouped] = await Promise.all([
+      prisma.kategori.count({ where: { tenant_id: tenantId } }),
+      prisma.mustahiq.groupBy({
+        by: ['kategori'],
+        where: { tenant_id: tenantId },
+        _count: { id: true }
+      })
+    ]);
+
+    let maxCount = 0;
+    let popularCategoryName = '-';
+    let totalMustahiqsCategorized = 0;
+
+    allMustahiqGrouped.forEach(item => {
+      const cnt = item._count.id;
+      totalMustahiqsCategorized += cnt;
+      if (cnt > maxCount && item.kategori) {
+        maxCount = cnt;
+        popularCategoryName = item.kategori.toUpperCase();
       }
     });
 
+    const stats = {
+      totalCategories: totalCategoriesCount,
+      popularCategoryName,
+      maxCount,
+      totalMustahiqsCategorized
+    };
+
     const countMap = {};
-    counts.forEach(c => {
+    allMustahiqGrouped.forEach(c => {
       if (c.kategori) {
         countMap[c.kategori.toUpperCase()] = c._count.id;
       }
     });
 
-    const dataWithCounts = data.map(item => ({
-      ...item,
-      mustahiq_count: countMap[item.nama_kategori.toUpperCase()] || 0
-    }));
-    
-    res.json({ success: true, data: dataWithCounts });
+    const isPaginated = paginate === 'true' || page !== undefined;
+    let data;
+
+    if (isPaginated) {
+      const pageNum = parseInt(page, 10) || 1;
+      const limitNum = parseInt(limit, 10) || 10;
+      const skipNum = (pageNum - 1) * limitNum;
+
+      const totalItems = await prisma.kategori.count({ where });
+      data = await prisma.kategori.findMany({
+        where,
+        skip: skipNum,
+        take: limitNum,
+        orderBy: { nama_kategori: 'asc' }
+      });
+
+      const dataWithCounts = data.map(item => ({
+        ...item,
+        mustahiq_count: countMap[item.nama_kategori.toUpperCase()] || 0
+      }));
+
+      res.json({
+        success: true,
+        data: dataWithCounts,
+        stats,
+        pagination: {
+          totalItems,
+          totalPages: Math.ceil(totalItems / limitNum),
+          currentPage: pageNum,
+          limit: limitNum
+        }
+      });
+    } else {
+      data = await prisma.kategori.findMany({
+        where,
+        orderBy: { nama_kategori: 'asc' }
+      });
+
+      const dataWithCounts = data.map(item => ({
+        ...item,
+        mustahiq_count: countMap[item.nama_kategori.toUpperCase()] || 0
+      }));
+
+      res.json({ success: true, data: dataWithCounts, stats });
+    }
   } catch (error) {
     console.error('[GET Kategori Error]', error);
     res.status(500).json({ success: false, error: error.message });
@@ -88,6 +151,13 @@ router.post('/', async (req, res) => {
     }
 
     const normalizedName = nama_kategori.trim().toUpperCase();
+    const slugRegex = /^[A-Z0-9_]+$/;
+    if (!slugRegex.test(normalizedName)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Nama kategori hanya boleh berisi huruf besar, angka, dan garis bawah (contoh: YATIM_NON_PANTI).'
+      });
+    }
 
     // Check for duplicate category name
     const existing = await prisma.kategori.findFirst({
@@ -128,6 +198,13 @@ router.put('/:id', async (req, res) => {
     let normalizedName = oldCategory.nama_kategori;
     if (nama_kategori) {
       normalizedName = nama_kategori.trim().toUpperCase();
+      const slugRegex = /^[A-Z0-9_]+$/;
+      if (!slugRegex.test(normalizedName)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Nama kategori hanya boleh berisi huruf besar, angka, dan garis bawah (contoh: YATIM_NON_PANTI).'
+        });
+      }
       
       // Check duplicate category name
       const existing = await prisma.kategori.findFirst({
