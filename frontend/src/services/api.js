@@ -352,6 +352,34 @@ class ApiService {
       method: 'POST'
     });
   }
+
+  // File Upload
+  static async uploadProfileImage(file) {
+    const token = this.getToken();
+    const tenantId = this.getTenantId();
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (tenantId) headers['x-tenant-id'] = tenantId;
+
+    const response = await fetch(`${BASE_URL}/v1/tenant/profile/upload`, {
+      method: 'POST',
+      headers,
+      body: formData
+    });
+
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Gagal mengunggah berkas.');
+    return data;
+  }
+
+  static getFileUrl(relativePath) {
+    if (!relativePath) return '';
+    if (relativePath.startsWith('http')) return relativePath;
+    return BASE_URL.replace('/api', '') + relativePath;
+  }
 }
 
 export default ApiService;

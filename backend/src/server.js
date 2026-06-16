@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 require('dotenv').config();
 
 // Route Imports
@@ -20,6 +21,7 @@ const PORT = process.env.PORT || 5002;
 // Middlewares
 app.use(cors());
 app.use(express.json());
+app.use('/api/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Base Health Check Route
 app.get('/api/health', (req, res) => {

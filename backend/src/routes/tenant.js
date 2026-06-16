@@ -1,6 +1,31 @@
 const express = require('express');
 const router = express.Router();
 const prisma = require('../prisma');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+// Ensure uploads directory exists
+const uploadsDir = path.join(__dirname, '../../uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Multer Storage Configuration
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    cb(null, file.fieldname + '-' + uniqueSuffix + ext);
+  }
+});
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 2 * 1024 * 1024 } // limit 2MB
+});
 
 const getTenantId = (req) => {
   return req.headers['x-tenant-id'] || req.query.tenant_id;
@@ -93,17 +118,17 @@ router.put('/profile', async (req, res) => {
       }
     });
 
-    res.json({
-      success: true,
-      data: {
-        id: updated.id,
-        name: updated.name,
-        settings: mergedSettings
-      }
-    });
+// POST /api/v1/tenant/profile/upload
+router.post('/profile/upload', upload.single('file'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No file uploaded.' });
+    }
+    const fileUrl = `/api/uploads/${req.file.filename}`;
+    res.json({ success: true, url: fileUrl });
   } catch (error) {
-    console.error('[PUT Tenant Profile Error]', error);
-    res.status(400).json({ success: false, error: error.message });
+    console.error('[Upload Error]', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

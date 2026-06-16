@@ -1,5 +1,7 @@
 const PDFDocument = require('pdfkit');
 const prisma = require('../prisma');
+const path = require('path');
+const fs = require('fs');
 
 class PdfGenerator {
   static async generateSpjPdf(programId, tenantId, res) {
@@ -37,14 +39,53 @@ class PdfGenerator {
     // Stream the PDF directly to the Express response
     doc.pipe(res);
 
-    // Header
-    doc.fontSize(16).text(schoolName.toUpperCase(), { align: 'center', bold: true });
-    doc.fontSize(10).text(address, { align: 'center' });
-    doc.moveDown();
+    // Check if logo is uploaded and exists locally
+    let logoPath = null;
+    if (settings.logo_url && settings.logo_url.startsWith('/api/uploads/')) {
+      const filename = settings.logo_url.replace('/api/uploads/', '');
+      const pathToCheck = path.join(__dirname, '../../uploads', filename);
+      if (fs.existsSync(pathToCheck)) {
+        logoPath = pathToCheck;
+      }
+    }
+
+    // Header drawing
+    if (logoPath) {
+      // Draw logo on the left, details on the right
+      doc.image(logoPath, 50, 45, { width: 55, height: 55 });
+      doc.fontSize(14).text(schoolName.toUpperCase(), 120, 45, { bold: true });
+      doc.fontSize(9).text(address, 120, 62);
+
+      let contactInfo = [];
+      if (settings.phone_number) contactInfo.push(`Telp: ${settings.phone_number}`);
+      if (settings.email) contactInfo.push(`Email: ${settings.email}`);
+      if (settings.npwp) contactInfo.push(`NPWP: ${settings.npwp}`);
+
+      if (contactInfo.length > 0) {
+        doc.fontSize(8).text(contactInfo.join(' | '), 120, 76);
+      }
+    } else {
+      // Fallback: Text only centered layout
+      doc.fontSize(16).text(schoolName.toUpperCase(), { align: 'center', bold: true });
+      doc.fontSize(10).text(address, { align: 'center' });
+
+      let contactInfo = [];
+      if (settings.phone_number) contactInfo.push(`Telp: ${settings.phone_number}`);
+      if (settings.email) contactInfo.push(`Email: ${settings.email}`);
+      if (settings.npwp) contactInfo.push(`NPWP: ${settings.npwp}`);
+
+      if (contactInfo.length > 0) {
+        doc.fontSize(8).text(contactInfo.join(' | '), { align: 'center' });
+      }
+    }
+
+    // Divider Line (Double lines: thick and thin)
+    const headerBottom = logoPath ? 110 : (doc.y > 100 ? doc.y : 100);
+    doc.moveTo(50, headerBottom).lineTo(545, headerBottom).lineWidth(2).stroke();
+    doc.moveTo(50, headerBottom + 3).lineTo(545, headerBottom + 3).lineWidth(0.5).stroke();
     
-    // Divider line
-    doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
-    doc.moveDown(2);
+    // Set current y below the header divider
+    doc.y = headerBottom + 15;
 
     // Title
     doc.fontSize(14).text('LAPORAN PERTANGGUNGJAWABAN (SPJ) SANTUNAN', { align: 'center', bold: true });
@@ -113,18 +154,37 @@ class PdfGenerator {
     currentY += 40;
 
     // Signatures
-    if (currentY > 680) {
+    if (currentY > 660) {
       doc.addPage();
       currentY = 50;
     }
 
     doc.fontSize(10);
-    const signatureY = currentY;
+    const signatureY = currentY + 15;
+
+    // Date
+    const kota = settings.kota || 'Purwakarta';
+    const dateStr = `${kota}, ${program.tanggal_pelaksanaan}`;
+    doc.text(dateStr, 380, currentY, { align: 'left' });
     
     // Headmaster Signature
     doc.text('Mengetahui,', 50, signatureY);
     doc.text('Kepala Sekolah', 50, signatureY + 15);
     doc.text(kepalaSekolah, 50, signatureY + 80, { underline: true, bold: true });
+
+    // Overlay Stempel image on Headmaster Signature area if it exists
+    let stempelPath = null;
+    if (settings.stempel_url && settings.stempel_url.startsWith('/api/uploads/')) {
+      const filename = settings.stempel_url.replace('/api/uploads/', '');
+      const pathToCheck = path.join(__dirname, '../../uploads', filename);
+      if (fs.existsSync(pathToCheck)) {
+        stempelPath = pathToCheck;
+      }
+    }
+
+    if (stempelPath) {
+      doc.image(stempelPath, 85, signatureY + 20, { width: 70, height: 70 });
+    }
 
     // Treasurer Signature
     doc.text('Dibuat oleh,', 380, signatureY);
