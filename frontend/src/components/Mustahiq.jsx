@@ -156,6 +156,19 @@ export default function Mustahiq() {
     }
   };
 
+  const calculateAge = (birthDateString) => {
+    if (!birthDateString) return '-';
+    const birthDate = new Date(birthDateString);
+    if (isNaN(birthDate.getTime())) return '-';
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return `${age} th`;
+  };
+
   // Local Filter logic
   const filteredMustahiqs = mustahiqs.filter(m => {
     const matchSearch = (m.nama_lengkap || '').toLowerCase().includes(search.toLowerCase()) || 
@@ -260,6 +273,7 @@ export default function Mustahiq() {
                 <tr style={styles.thRow}>
                   <th style={styles.th}>NIK</th>
                   <th style={styles.th}>Nama Lengkap</th>
+                  <th style={styles.th}>Umur</th>
                   <th style={styles.th}>Kategori</th>
                   <th style={styles.th}>Gender</th>
                   <th style={styles.th}>No Telepon</th>
@@ -272,6 +286,7 @@ export default function Mustahiq() {
                   <tr key={m.id} style={styles.tr}>
                     <td style={styles.td}>{m.nik || '-'}</td>
                     <td style={{ ...styles.td, fontWeight: '600' }}>{m.nama_lengkap}</td>
+                    <td style={styles.td}>{calculateAge(m.tanggal_lahir)}</td>
                     <td style={styles.td}><span style={styles.tagKategori}>{m.kategori}</span></td>
                     <td style={styles.td}>
                       {m.jenis_kelamin === 'LAKI_LAKI' ? 'Laki-laki' : (m.jenis_kelamin === 'PEREMPUAN' ? 'Perempuan' : '-')}

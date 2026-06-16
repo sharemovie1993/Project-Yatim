@@ -383,8 +383,21 @@ router.get('/export', async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Daftar Mustahiq');
 
+    const calculateAge = (birthDateString) => {
+      if (!birthDateString) return '-';
+      const birthDate = new Date(birthDateString);
+      if (isNaN(birthDate.getTime())) return '-';
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      return `${age} tahun`;
+    };
+
     // Title Block
-    worksheet.mergeCells('A1:K1');
+    worksheet.mergeCells('A1:L1');
     const titleCell = worksheet.getCell('A1');
     titleCell.value = `LAPORAN DATA PENERIMA MANFAAT (MUSTAHIQ) - ${tenantName.toUpperCase()}`;
     titleCell.font = { name: 'Segoe UI', bold: true, size: 14, color: { argb: 'FF065F46' } }; // Dark green
@@ -393,7 +406,7 @@ router.get('/export', async (req, res) => {
     worksheet.getRow(1).height = 40;
 
     // Meta data Block
-    worksheet.mergeCells('A2:K2');
+    worksheet.mergeCells('A2:L2');
     const metaCell = worksheet.getCell('A2');
     metaCell.value = `Tanggal Ekspor: ${new Date().toLocaleDateString('id-ID', { dateStyle: 'long' })} | Total Data: ${data.length} Mustahiq`;
     metaCell.font = { name: 'Segoe UI', size: 10, color: { argb: 'FF374151' } };
@@ -411,6 +424,7 @@ router.get('/export', async (req, res) => {
       'Kategori', 
       'Jenis Kelamin', 
       'Tanggal Lahir', 
+      'Umur',
       'Alamat Lengkap', 
       'No Telepon', 
       'Nama Wali / Kerabat', 
@@ -443,9 +457,9 @@ router.get('/export', async (req, res) => {
       };
     });
 
-    // Formatting NIK (Col 1) and Telepon (Col 7) as Text
+    // Formatting NIK (Col 1) and Telepon (Col 8) as Text
     worksheet.getColumn(1).numFmt = '@';
-    worksheet.getColumn(7).numFmt = '@';
+    worksheet.getColumn(8).numFmt = '@';
 
     // Populate data
     data.forEach((m, index) => {
@@ -456,6 +470,7 @@ router.get('/export', async (req, res) => {
         m.kategori,
         jkText,
         m.tanggal_lahir || '',
+        calculateAge(m.tanggal_lahir),
         m.alamat_lengkap,
         m.no_telepon || '',
         m.nama_wali || '',
@@ -486,12 +501,12 @@ router.get('/export', async (req, res) => {
         };
 
         // Formatting
-        if (colNum === 1 || colNum === 7) {
+        if (colNum === 1 || colNum === 8) {
           cell.numFmt = '@';
         }
 
         // Alignments
-        if (colNum === 1 || colNum === 4 || colNum === 5 || colNum === 7 || colNum === 10) {
+        if (colNum === 1 || colNum === 4 || colNum === 5 || colNum === 6 || colNum === 8 || colNum === 11) {
           cell.alignment = { vertical: 'middle', horizontal: 'center' };
         } else {
           cell.alignment = { vertical: 'middle', horizontal: 'left' };

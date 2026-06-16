@@ -55,9 +55,10 @@ class PdfGenerator {
     // Table Header
     const tableTop = doc.y;
     doc.fontSize(10).text('No', 50, tableTop, { bold: true });
-    doc.text('Nama Lengkap', 90, tableTop, { bold: true });
-    doc.text('Kategori', 250, tableTop, { bold: true });
-    doc.text('Jumlah Diterima', 350, tableTop, { bold: true });
+    doc.text('Nama Lengkap', 80, tableTop, { bold: true });
+    doc.text('Umur', 220, tableTop, { bold: true });
+    doc.text('Kategori', 270, tableTop, { bold: true });
+    doc.text('Jumlah Diterima', 360, tableTop, { bold: true });
     doc.text('Status', 470, tableTop, { bold: true });
 
     doc.moveTo(50, tableTop + 15).lineTo(545, tableTop + 15).stroke();
@@ -67,6 +68,19 @@ class PdfGenerator {
     let index = 1;
     let totalDana = 0;
 
+    const calculateAge = (birthDateString) => {
+      if (!birthDateString) return '-';
+      const birthDate = new Date(birthDateString);
+      if (isNaN(birthDate.getTime())) return '-';
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      return `${age} th`;
+    };
+
     for (const p of penyaluran) {
       // Prevent overflow
       if (currentY > 700) {
@@ -75,9 +89,10 @@ class PdfGenerator {
       }
 
       doc.text(index.toString(), 50, currentY);
-      doc.text(p.mustahiq?.nama_lengkap || 'Tanpa Nama', 90, currentY);
-      doc.text(p.mustahiq?.kategori || 'UMUM', 250, currentY);
-      doc.text(p.jumlah_diterima, 350, currentY);
+      doc.text(p.mustahiq?.nama_lengkap || 'Tanpa Nama', 80, currentY);
+      doc.text(calculateAge(p.mustahiq?.tanggal_lahir), 220, currentY);
+      doc.text(p.mustahiq?.kategori || 'UMUM', 270, currentY);
+      doc.text(p.jumlah_diterima, 360, currentY);
       doc.text(p.status, 470, currentY);
 
       // Simple number parsing for totaling
@@ -92,8 +107,8 @@ class PdfGenerator {
     currentY += 10;
 
     // Total Row
-    doc.fontSize(11).text('TOTAL PENYALURAN DANA:', 90, currentY, { bold: true });
-    doc.text(`Rp ${totalDana.toLocaleString('id-ID')}`, 350, currentY, { bold: true });
+    doc.fontSize(11).text('TOTAL PENYALURAN DANA:', 80, currentY, { bold: true });
+    doc.text(`Rp ${totalDana.toLocaleString('id-ID')}`, 360, currentY, { bold: true });
 
     currentY += 40;
 
