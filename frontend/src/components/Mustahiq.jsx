@@ -10,6 +10,9 @@ export default function Mustahiq() {
   const [search, setSearch] = useState('');
   const [filterKategori, setFilterKategori] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterNik, setFilterNik] = useState('');
+  const [filterAgeGroup, setFilterAgeGroup] = useState('');
+  const [maxAgeYatim, setMaxAgeYatim] = useState(15);
 
   // Form Modal state
   const [showModal, setShowModal] = useState(false);
@@ -46,6 +49,18 @@ export default function Mustahiq() {
       
       const cats = await ApiService.getKategori();
       setKategoriList(cats.data || []);
+
+      const profile = await ApiService.getTenantProfile();
+      let parsedSettings = {};
+      try {
+        parsedSettings = typeof profile.data?.settings === 'string'
+          ? JSON.parse(profile.data.settings)
+          : profile.data?.settings || {};
+      } catch (e) {
+        parsedSettings = {};
+      }
+      const ageLimit = parsedSettings.rules?.max_age_yatim ?? 15;
+      setMaxAgeYatim(ageLimit);
     } catch (e) {
       console.error('Failed to load mustahiq data:', e);
     } finally {
@@ -127,6 +142,32 @@ export default function Mustahiq() {
     }
   };
 
+  const handleQuickStatusChange = async (id, newStatus) => {
+    try {
+      const m = mustahiqs.find(item => item.id === id);
+      if (!m) return;
+      
+      const updatedData = {
+        nik: m.nik || '',
+        nama_lengkap: m.nama_lengkap,
+        kategori: m.kategori,
+        jenis_kelamin: m.jenis_kelamin || 'LAKI_LAKI',
+        tanggal_lahir: m.tanggal_lahir || '',
+        alamat_lengkap: m.alamat_lengkap,
+        no_telepon: m.no_telepon || '',
+        nama_wali: m.nama_wali || '',
+        orang_tua_asuh: m.orang_tua_asuh || '',
+        status: newStatus,
+        catatan: m.catatan || '',
+      };
+      
+      await ApiService.updateMustahiq(id, updatedData);
+      setMustahiqs(prev => prev.map(item => item.id === id ? { ...item, status: newStatus } : item));
+    } catch (err) {
+      alert('Gagal mengubah status: ' + err.message);
+    }
+  };
+
   // Excel Handler
   const handleExportExcel = () => {
     const url = ApiService.getExportExcelUrl();
@@ -145,7 +186,7 @@ export default function Mustahiq() {
     setUploading(true);
     try {
       const res = await ApiService.importExcel(excelFile);
-      alert(`Berhasil mengimpor ${res.count} data mustahiq dari Excel.`);
+      alert(`Berhasil mengimpor ${res.count} data mustahiq. (${res.skipped || 0} data dengan NIK duplikat dilewati).`);
       setShowImportModal(false);
       loadData();
     } catch (err) {
@@ -169,13 +210,45 @@ export default function Mustahiq() {
     return `${age} th`;
   };
 
+  const getNumericalAge = (birthDateString) => {
+    if (!birthDateString) return null;
+    const birthDate = new Date(birthDateString);
+    if (isNaN(birthDate.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  };
+
   // Local Filter logic
   const filteredMustahiqs = mustahiqs.filter(m => {
     const matchSearch = (m.nama_lengkap || '').toLowerCase().includes(search.toLowerCase()) || 
                         (m.nik && m.nik.includes(search));
     const matchKat = filterKategori ? m.kategori === filterKategori : true;
     const matchStat = filterStatus ? m.status === filterStatus : true;
-    return matchSearch && matchKat && matchStat;
+    
+    const matchNik = filterNik === 'HAS_NIK' ? !!m.nik : (filterNik === 'NO_NIK' ? !m.nik : true);
+
+    let matchAge = true;
+    if (filterAgeGroup) {
+      const age = getNumericalAge(m.tanggal_lahir);
+      if (filterAgeGroup === 'BALITA') {
+        matchAge = age !== null && age <= 5;
+      } else if (filterAgeGroup === 'ANAK') {
+        matchAge = age !== null && age >= 6 && age <= 12;
+      } else if (filterAgeGroup === 'REMAJA') {
+        matchAge = age !== null && age >= 13 && age <= 17;
+      } else if (filterAgeGroup === 'DEWASA') {
+        matchAge = age !== null && age >= 18;
+      } else if (filterAgeGroup === 'UNKNOWN') {
+        matchAge = age === null;
+      }
+    }
+
+    return matchSearch && matchKat && matchStat && matchNik && matchAge;
   });
 
   // Calculate statistics
@@ -258,6 +331,29 @@ export default function Mustahiq() {
           <option value="SURVEY">SURVEY</option>
           <option value="TIDAK_AKTIF">TIDAK AKTIF</option>
         </select>
+        <select
+          className="input"
+          value={filterNik}
+          onChange={(e) => setFilterNik(e.target.value)}
+          style={styles.filterSelect}
+        >
+          <option value="">Semua NIK</option>
+          <option value="HAS_NIK">Punya NIK</option>
+          <option value="NO_NIK">Tanpa NIK</option>
+        </select>
+        <select
+          className="input"
+          value={filterAgeGroup}
+          onChange={(e) => setFilterAgeGroup(e.target.value)}
+          style={styles.filterSelect}
+        >
+          <option value="">Semua Umur</option>
+          <option value="BALITA">Balita (0-5 th)</option>
+          <option value="ANAK">Anak-anak (6-12 th)</option>
+          <option value="REMAJA">Remaja (13-17 th)</option>
+          <option value="DEWASA">Dewasa (&gt;=18 th)</option>
+          <option value="UNKNOWN">Tidak Ada Tgl Lahir</option>
+        </select>
       </div>
 
       {/* Data Table */}
@@ -286,14 +382,55 @@ export default function Mustahiq() {
                   <tr key={m.id} style={styles.tr}>
                     <td style={styles.td}>{m.nik || '-'}</td>
                     <td style={{ ...styles.td, fontWeight: '600' }}>{m.nama_lengkap}</td>
-                    <td style={styles.td}>{calculateAge(m.tanggal_lahir)}</td>
+                    <td style={styles.td}>
+                      {calculateAge(m.tanggal_lahir)}
+                      {(() => {
+                        const ageNum = getNumericalAge(m.tanggal_lahir);
+                        const isExceeded = ageNum !== null &&
+                          (m.kategori || '').toUpperCase().includes('YATIM') &&
+                          ageNum > maxAgeYatim;
+                        return isExceeded ? (
+                          <span style={{
+                            marginLeft: '8px',
+                            fontSize: '10px',
+                            backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                            border: '1px solid rgba(239, 68, 68, 0.25)',
+                            color: '#ef4444',
+                            padding: '2px 6px',
+                            borderRadius: '4px',
+                            fontWeight: 'bold',
+                            whiteSpace: 'nowrap'
+                          }} title={`Melebihi batas usia yatim (${maxAgeYatim} th)`}>
+                            ⚠️ Melebihi Batas
+                          </span>
+                        ) : null;
+                      })()}
+                    </td>
                     <td style={styles.td}><span style={styles.tagKategori}>{m.kategori}</span></td>
                     <td style={styles.td}>
                       {m.jenis_kelamin === 'LAKI_LAKI' ? 'Laki-laki' : (m.jenis_kelamin === 'PEREMPUAN' ? 'Perempuan' : '-')}
                     </td>
                     <td style={styles.td}>{m.no_telepon || '-'}</td>
-                    <td style={styles.td}>
-                      <span style={styles.badgeStatus(m.status)}>{m.status}</span>
+                     <td style={styles.td}>
+                      <select
+                        value={m.status}
+                        onChange={(e) => handleQuickStatusChange(m.id, e.target.value)}
+                        style={{
+                          padding: '4px 8px',
+                          fontSize: '11px',
+                          borderRadius: '6px',
+                          border: '1px solid hsl(var(--border))',
+                          backgroundColor: m.status === 'AKTIF' ? 'rgba(16, 185, 129, 0.12)' : (m.status === 'SURVEY' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)'),
+                          color: m.status === 'AKTIF' ? '#10b981' : (m.status === 'SURVEY' ? '#f59e0b' : '#ef4444'),
+                          fontWeight: '600',
+                          cursor: 'pointer',
+                          outline: 'none',
+                        }}
+                      >
+                        <option value="AKTIF">AKTIF</option>
+                        <option value="SURVEY">SURVEY</option>
+                        <option value="TIDAK_AKTIF">TIDAK AKTIF</option>
+                      </select>
                     </td>
                     <td style={styles.td}>
                       <div style={styles.actionGroup}>
@@ -626,6 +763,7 @@ const styles = {
   },
   toolbar: {
     display: 'flex',
+    flexWrap: 'wrap',
     gap: '12px',
     padding: '16px',
   },

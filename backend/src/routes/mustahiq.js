@@ -174,10 +174,15 @@ router.post('/import', async (req, res) => {
 
     // SQLite/Prisma createMany is supported
     const createRes = await prisma.mustahiq.createMany({
-      data: dataWithTenant
+      data: dataWithTenant,
+      skipDuplicates: true
     });
 
-    res.json({ success: true, count: createRes.count || 0 });
+    const totalPayloads = dataWithTenant.length;
+    const insertedCount = createRes.count || 0;
+    const skippedCount = totalPayloads - insertedCount;
+
+    res.json({ success: true, count: insertedCount, skipped: skippedCount });
   } catch (error) {
     console.error('[POST Mustahiq Import Error]', error);
     res.status(400).json({ success: false, error: error.message });
@@ -708,10 +713,15 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
     }));
 
     const createRes = await prisma.mustahiq.createMany({
-      data: dataWithTenant
+      data: dataWithTenant,
+      skipDuplicates: true
     });
 
-    res.json({ success: true, count: createRes.count || 0 });
+    const totalPayloads = dataWithTenant.length;
+    const insertedCount = createRes.count || 0;
+    const skippedCount = totalPayloads - insertedCount;
+
+    res.json({ success: true, count: insertedCount, skipped: skippedCount });
   } catch (error) {
     console.error('[Import Excel Mustahiq Error]', error);
     res.status(400).json({ success: false, error: error.message });
