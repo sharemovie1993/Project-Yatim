@@ -83,9 +83,24 @@ class ApiService {
     window.location.href = '/login';
   }
 
-  // Mustahiq CRUD
-  static async getMustahiq(activeOnly = false) {
-    return this.request(`/v1/mustahiq?activeOnly=${activeOnly}`);
+  static async getMustahiq(params = {}) {
+    if (typeof params === 'boolean') {
+      return this.request(`/v1/mustahiq?activeOnly=${params}`);
+    }
+
+    const query = new URLSearchParams();
+    if (params.activeOnly !== undefined) query.append('activeOnly', params.activeOnly);
+    if (params.paginate !== undefined) query.append('paginate', params.paginate);
+    if (params.page !== undefined) query.append('page', params.page);
+    if (params.limit !== undefined) query.append('limit', params.limit);
+    if (params.search !== undefined) query.append('search', params.search);
+    if (params.kategori !== undefined) query.append('kategori', params.kategori);
+    if (params.status !== undefined) query.append('status', params.status);
+    if (params.nikStatus !== undefined) query.append('nikStatus', params.nikStatus);
+    if (params.ageGroup !== undefined) query.append('ageGroup', params.ageGroup);
+
+    const queryString = query.toString();
+    return this.request(`/v1/mustahiq${queryString ? `?${queryString}` : ''}`);
   }
 
   static async addMustahiq(data) {

@@ -17,25 +17,152 @@ router.get('/', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
     }
 
-    const activeOnly = req.query.activeOnly === 'true';
+    const { 
+      page, 
+      limit, 
+      paginate, 
+      search, 
+      kategori, 
+      status, 
+      nikStatus, 
+      ageGroup,
+      activeOnly 
+    } = req.query;
+
     const where = { tenant_id: tenantId };
-    if (activeOnly) {
+
+    if (activeOnly === 'true') {
       where.status = 'AKTIF';
+    } else if (status) {
+      where.status = status;
     }
 
-    const data = await prisma.mustahiq.findMany({
-      where,
-      include: {
-        anggota: {
-          include: {
-            kelompok: true
-          }
-        }
-      },
-      orderBy: { nama_lengkap: 'asc' }
-    });
+    if (kategori) {
+      where.kategori = kategori;
+    }
 
-    res.json({ success: true, data });
+    if (nikStatus === 'HAS_NIK') {
+      where.NOT = [
+        { nik: null },
+        { nik: '' }
+      ];
+    } else if (nikStatus === 'NO_NIK') {
+      where.OR = [
+        { nik: null },
+        { nik: '' }
+      ];
+    }
+
+    if (search) {
+      const searchTrimmed = String(search).trim();
+      where.OR = [
+        { nama_lengkap: { contains: searchTrimmed } },
+        { nik: { contains: searchTrimmed } }
+      ];
+    }
+
+    if (ageGroup) {
+      const today = new Date();
+      const getIsoDateStr = (yearsAgo) => {
+        const d = new Date(today);
+        d.setFullYear(today.getFullYear() - yearsAgo);
+        return d.toISOString().slice(0, 10);
+      };
+
+      if (ageGroup === 'BALITA') {
+        // Age 0-5
+        where.tanggal_lahir = {
+          gte: getIsoDateStr(5),
+          lte: getIsoDateStr(0)
+        };
+      } else if (ageGroup === 'ANAK') {
+        // Age 6-12
+        where.tanggal_lahir = {
+          gte: getIsoDateStr(12),
+          lt: getIsoDateStr(5)
+        };
+      } else if (ageGroup === 'REMAJA') {
+        // Age 13-17
+        where.tanggal_lahir = {
+          gte: getIsoDateStr(17),
+          lt: getIsoDateStr(12)
+        };
+      } else if (ageGroup === 'DEWASA') {
+        // Age >= 18
+        where.tanggal_lahir = {
+          lt: getIsoDateStr(17)
+        };
+      } else if (ageGroup === 'UNKNOWN') {
+        where.OR = [
+          { tanggal_lahir: null },
+          { tanggal_lahir: '' }
+        ];
+      }
+    }
+
+    // Fetch tenant overall stats for the mini dashboard cards
+    const [totalCount, activeCount, surveyCount, inactiveCount] = await Promise.all([
+      prisma.mustahiq.count({ where: { tenant_id: tenantId } }),
+      prisma.mustahiq.count({ where: { tenant_id: tenantId, status: 'AKTIF' } }),
+      prisma.mustahiq.count({ where: { tenant_id: tenantId, status: 'SURVEY' } }),
+      prisma.mustahiq.count({ where: { tenant_id: tenantId, status: 'TIDAK_AKTIF' } })
+    ]);
+
+    const stats = {
+      total: totalCount,
+      aktif: activeCount,
+      survey: surveyCount,
+      tidakAktif: inactiveCount
+    };
+
+    const isPaginated = paginate === 'true' || page !== undefined;
+
+    if (isPaginated) {
+      const pageNum = parseInt(page, 10) || 1;
+      const limitNum = parseInt(limit, 10) || 10;
+      const skipNum = (pageNum - 1) * limitNum;
+
+      const totalItems = await prisma.mustahiq.count({ where });
+      const data = await prisma.mustahiq.findMany({
+        where,
+        skip: skipNum,
+        take: limitNum,
+        include: {
+          anggota: {
+            include: {
+              kelompok: true
+            }
+          }
+        },
+        orderBy: { nama_lengkap: 'asc' }
+      });
+
+      res.json({
+        success: true,
+        data,
+        stats,
+        pagination: {
+          totalItems,
+          totalPages: Math.ceil(totalItems / limitNum),
+          currentPage: pageNum,
+          limit: limitNum
+        }
+      });
+    } else {
+      const data = await prisma.mustahiq.findMany({
+        where,
+        include: {
+          anggota: {
+            include: {
+              kelompok: true
+            }
+          }
+        },
+        orderBy: { nama_lengkap: 'asc' }
+      });
+
+      res.json({ success: true, data, stats });
+    }
   } catch (error) {
     console.error('[GET Mustahiq Error]', error);
     res.status(500).json({ success: false, error: error.message });
@@ -108,6 +235,44 @@ async function validateQuota(req, tenantId, countToInsert = 1) {
   }
 }
 
+function validateMustahiqInputs(data) {
+  // Validate NIK
+  if (data.nik === '' || data.nik === undefined || data.nik === null) {
+    data.nik = null;
+  } else {
+    data.nik = String(data.nik).trim();
+    if (data.nik === '') {
+      data.nik = null;
+    } else if (!/^\d{16}$/.test(data.nik)) {
+      throw new Error('Format NIK tidak valid. NIK harus berupa 16 digit angka.');
+    }
+  }
+
+  // Validate Name
+  if (!data.nama_lengkap || String(data.nama_lengkap).trim() === '') {
+    throw new Error('Nama Lengkap wajib diisi.');
+  }
+  data.nama_lengkap = String(data.nama_lengkap).trim();
+
+  // Validate Tanggal Lahir
+  if (data.tanggal_lahir === '' || data.tanggal_lahir === undefined || data.tanggal_lahir === null) {
+    data.tanggal_lahir = null;
+  } else {
+    data.tanggal_lahir = String(data.tanggal_lahir).trim();
+    if (data.tanggal_lahir === '') {
+      data.tanggal_lahir = null;
+    } else {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(data.tanggal_lahir)) {
+        throw new Error('Format Tanggal Lahir tidak valid. Gunakan format YYYY-MM-DD.');
+      }
+      const parsedDate = new Date(data.tanggal_lahir);
+      if (isNaN(parsedDate.getTime())) {
+        throw new Error('Tanggal Lahir tidak valid.');
+      }
+    }
+  }
+}
+
 // POST /api/v1/mustahiq
 router.post('/', async (req, res) => {
   try {
@@ -117,12 +282,7 @@ router.post('/', async (req, res) => {
     }
 
     const mustahiqData = req.body;
-    if (mustahiqData.nik === '' || mustahiqData.nik === undefined || mustahiqData.nik === null) {
-      mustahiqData.nik = null;
-    } else {
-      mustahiqData.nik = String(mustahiqData.nik).trim();
-      if (mustahiqData.nik === '') mustahiqData.nik = null;
-    }
+    validateMustahiqInputs(mustahiqData);
     
     // Validate quota
     await validateQuota(req, tenantId, 1);
@@ -137,7 +297,11 @@ router.post('/', async (req, res) => {
     res.status(201).json({ success: true, data });
   } catch (error) {
     console.error('[POST Mustahiq Error]', error);
-    res.status(400).json({ success: false, error: error.message });
+    let errMsg = error.message;
+    if (error.code === 'P2002') {
+      errMsg = 'Nomor NIK ini sudah terdaftar di database. Silakan gunakan NIK lain.';
+    }
+    res.status(400).json({ success: false, error: errMsg });
   }
 });
 
@@ -194,12 +358,7 @@ router.put('/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
-    if (updates.nik === '' || updates.nik === undefined || updates.nik === null) {
-      updates.nik = null;
-    } else {
-      updates.nik = String(updates.nik).trim();
-      if (updates.nik === '') updates.nik = null;
-    }
+    validateMustahiqInputs(updates);
 
     const data = await prisma.mustahiq.update({
       where: { id },
@@ -209,7 +368,11 @@ router.put('/:id', async (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     console.error('[PUT Mustahiq Error]', error);
-    res.status(400).json({ success: false, error: error.message });
+    let errMsg = error.message;
+    if (error.code === 'P2002') {
+      errMsg = 'Nomor NIK ini sudah terdaftar di database. Silakan gunakan NIK lain.';
+    }
+    res.status(400).json({ success: false, error: errMsg });
   }
 });
 

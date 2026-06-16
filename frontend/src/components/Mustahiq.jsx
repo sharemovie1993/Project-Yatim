@@ -14,6 +14,13 @@ export default function Mustahiq() {
   const [filterAgeGroup, setFilterAgeGroup] = useState('');
   const [maxAgeYatim, setMaxAgeYatim] = useState(15);
 
+  // Pagination & Statistics state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalItems, setTotalItems] = useState(0);
+  const [stats, setStats] = useState({ total: 0, aktif: 0, survey: 0, tidakAktif: 0 });
+
   // Form Modal state
   const [showModal, setShowModal] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -41,26 +48,27 @@ export default function Mustahiq() {
   const [excelFile, setExcelFile] = useState(null);
   const [uploading, setUploading] = useState(false);
 
-  const loadData = async () => {
+  const loadData = async (page = currentPage, limit = pageSize) => {
     setLoading(true);
     try {
-      const res = await ApiService.getMustahiq();
+      const res = await ApiService.getMustahiq({
+        paginate: true,
+        page,
+        limit,
+        search,
+        kategori: filterKategori,
+        status: filterStatus,
+        nikStatus: filterNik,
+        ageGroup: filterAgeGroup
+      });
       setMustahiqs(res.data || []);
-      
-      const cats = await ApiService.getKategori();
-      setKategoriList(cats.data || []);
-
-      const profile = await ApiService.getTenantProfile();
-      let parsedSettings = {};
-      try {
-        parsedSettings = typeof profile.data?.settings === 'string'
-          ? JSON.parse(profile.data.settings)
-          : profile.data?.settings || {};
-      } catch (e) {
-        parsedSettings = {};
+      if (res.pagination) {
+        setTotalPages(res.pagination.totalPages || 1);
+        setTotalItems(res.pagination.totalItems || 0);
       }
-      const ageLimit = parsedSettings.rules?.max_age_yatim ?? 15;
-      setMaxAgeYatim(ageLimit);
+      if (res.stats) {
+        setStats(res.stats);
+      }
     } catch (e) {
       console.error('Failed to load mustahiq data:', e);
     } finally {
@@ -68,9 +76,38 @@ export default function Mustahiq() {
     }
   };
 
+  // Load static configurations once on mount
   useEffect(() => {
-    loadData();
+    const loadConfig = async () => {
+      try {
+        const cats = await ApiService.getKategori();
+        setKategoriList(cats.data || []);
+
+        const profile = await ApiService.getTenantProfile();
+        let parsedSettings = {};
+        try {
+          parsedSettings = typeof profile.data?.settings === 'string'
+            ? JSON.parse(profile.data.settings)
+            : profile.data?.settings || {};
+        } catch (e) {
+          parsedSettings = {};
+        }
+        const ageLimit = parsedSettings.rules?.max_age_yatim ?? 15;
+        setMaxAgeYatim(ageLimit);
+      } catch (e) {
+        console.error('Failed to load configurations:', e);
+      }
+    };
+    loadConfig();
   }, []);
+
+  // Fetch paginated data whenever filter states or page states change
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      loadData(currentPage, pageSize);
+    }, 300); // Debounce search changes
+    return () => clearTimeout(handler);
+  }, [currentPage, pageSize, search, filterKategori, filterStatus, filterNik, filterAgeGroup]);
 
   const handleOpenAdd = () => {
     setIsEdit(false);
@@ -223,39 +260,14 @@ export default function Mustahiq() {
     return age;
   };
 
-  // Local Filter logic
-  const filteredMustahiqs = mustahiqs.filter(m => {
-    const matchSearch = (m.nama_lengkap || '').toLowerCase().includes(search.toLowerCase()) || 
-                        (m.nik && m.nik.includes(search));
-    const matchKat = filterKategori ? m.kategori === filterKategori : true;
-    const matchStat = filterStatus ? m.status === filterStatus : true;
-    
-    const matchNik = filterNik === 'HAS_NIK' ? !!m.nik : (filterNik === 'NO_NIK' ? !m.nik : true);
+  // Local Filter logic (handled server-side, passed as-is)
+  const filteredMustahiqs = mustahiqs;
 
-    let matchAge = true;
-    if (filterAgeGroup) {
-      const age = getNumericalAge(m.tanggal_lahir);
-      if (filterAgeGroup === 'BALITA') {
-        matchAge = age !== null && age <= 5;
-      } else if (filterAgeGroup === 'ANAK') {
-        matchAge = age !== null && age >= 6 && age <= 12;
-      } else if (filterAgeGroup === 'REMAJA') {
-        matchAge = age !== null && age >= 13 && age <= 17;
-      } else if (filterAgeGroup === 'DEWASA') {
-        matchAge = age !== null && age >= 18;
-      } else if (filterAgeGroup === 'UNKNOWN') {
-        matchAge = age === null;
-      }
-    }
-
-    return matchSearch && matchKat && matchStat && matchNik && matchAge;
-  });
-
-  // Calculate statistics
-  const totalCount = mustahiqs.length;
-  const activeCount = mustahiqs.filter(m => m.status === 'AKTIF').length;
-  const surveyCount = mustahiqs.filter(m => m.status === 'SURVEY').length;
-  const inactiveCount = mustahiqs.filter(m => m.status === 'TIDAK_AKTIF').length;
+  // Calculate statistics (fetched from server)
+  const totalCount = stats.total;
+  const activeCount = stats.aktif;
+  const surveyCount = stats.survey;
+  const inactiveCount = stats.tidakAktif;
 
   return (
     <div style={styles.container}>
@@ -306,13 +318,19 @@ export default function Mustahiq() {
           className="input"
           placeholder="Cari NIK atau Nama Mustahiq..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setCurrentPage(1);
+          }}
           style={styles.searchInput}
         />
         <select
           className="input"
           value={filterKategori}
-          onChange={(e) => setFilterKategori(e.target.value)}
+          onChange={(e) => {
+            setFilterKategori(e.target.value);
+            setCurrentPage(1);
+          }}
           style={styles.filterSelect}
         >
           <option value="">Semua Kategori</option>
@@ -323,7 +341,10 @@ export default function Mustahiq() {
         <select
           className="input"
           value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
+          onChange={(e) => {
+            setFilterStatus(e.target.value);
+            setCurrentPage(1);
+          }}
           style={styles.filterSelect}
         >
           <option value="">Semua Status</option>
@@ -334,7 +355,10 @@ export default function Mustahiq() {
         <select
           className="input"
           value={filterNik}
-          onChange={(e) => setFilterNik(e.target.value)}
+          onChange={(e) => {
+            setFilterNik(e.target.value);
+            setCurrentPage(1);
+          }}
           style={styles.filterSelect}
         >
           <option value="">Semua NIK</option>
@@ -344,7 +368,10 @@ export default function Mustahiq() {
         <select
           className="input"
           value={filterAgeGroup}
-          onChange={(e) => setFilterAgeGroup(e.target.value)}
+          onChange={(e) => {
+            setFilterAgeGroup(e.target.value);
+            setCurrentPage(1);
+          }}
           style={styles.filterSelect}
         >
           <option value="">Semua Umur</option>
@@ -363,87 +390,177 @@ export default function Mustahiq() {
         ) : filteredMustahiqs.length === 0 ? (
           <div style={styles.centerText}>Tidak ada data mustahiq ditemukan.</div>
         ) : (
-          <div style={styles.tableWrapper}>
-            <table style={styles.table}>
-              <thead>
-                <tr style={styles.thRow}>
-                  <th style={styles.th}>NIK</th>
-                  <th style={styles.th}>Nama Lengkap</th>
-                  <th style={styles.th}>Umur</th>
-                  <th style={styles.th}>Kategori</th>
-                  <th style={styles.th}>Gender</th>
-                  <th style={styles.th}>No Telepon</th>
-                  <th style={styles.th}>Status</th>
-                  <th style={styles.th}>Aksi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredMustahiqs.map((m) => (
-                  <tr key={m.id} style={styles.tr}>
-                    <td style={styles.td}>{m.nik || '-'}</td>
-                    <td style={{ ...styles.td, fontWeight: '600' }}>{m.nama_lengkap}</td>
-                    <td style={styles.td}>
-                      {calculateAge(m.tanggal_lahir)}
-                      {(() => {
-                        const ageNum = getNumericalAge(m.tanggal_lahir);
-                        const isExceeded = ageNum !== null &&
-                          (m.kategori || '').toUpperCase().includes('YATIM') &&
-                          ageNum > maxAgeYatim;
-                        return isExceeded ? (
-                          <span style={{
-                            marginLeft: '8px',
-                            fontSize: '10px',
-                            backgroundColor: 'rgba(239, 68, 68, 0.12)',
-                            border: '1px solid rgba(239, 68, 68, 0.25)',
-                            color: '#ef4444',
-                            padding: '2px 6px',
-                            borderRadius: '4px',
-                            fontWeight: 'bold',
-                            whiteSpace: 'nowrap'
-                          }} title={`Melebihi batas usia yatim (${maxAgeYatim} th)`}>
-                            ⚠️ Melebihi Batas
-                          </span>
-                        ) : null;
-                      })()}
-                    </td>
-                    <td style={styles.td}><span style={styles.tagKategori}>{m.kategori}</span></td>
-                    <td style={styles.td}>
-                      {m.jenis_kelamin === 'LAKI_LAKI' ? 'Laki-laki' : (m.jenis_kelamin === 'PEREMPUAN' ? 'Perempuan' : '-')}
-                    </td>
-                    <td style={styles.td}>{m.no_telepon || '-'}</td>
-                     <td style={styles.td}>
-                      <select
-                        value={m.status}
-                        onChange={(e) => handleQuickStatusChange(m.id, e.target.value)}
-                        style={{
-                          padding: '4px 8px',
-                          fontSize: '11px',
-                          borderRadius: '6px',
-                          border: '1px solid hsl(var(--border))',
-                          backgroundColor: m.status === 'AKTIF' ? 'rgba(16, 185, 129, 0.12)' : (m.status === 'SURVEY' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)'),
-                          color: m.status === 'AKTIF' ? '#10b981' : (m.status === 'SURVEY' ? '#f59e0b' : '#ef4444'),
-                          fontWeight: '600',
-                          cursor: 'pointer',
-                          outline: 'none',
-                        }}
-                      >
-                        <option value="AKTIF">AKTIF</option>
-                        <option value="SURVEY">SURVEY</option>
-                        <option value="TIDAK_AKTIF">TIDAK AKTIF</option>
-                      </select>
-                    </td>
-                    <td style={styles.td}>
-                      <div style={styles.actionGroup}>
-                        <button className="btn btn-outline" style={styles.actionBtn} title="Lihat Detail" onClick={() => handleOpenDetail(m)}>👁️</button>
-                        <button className="btn btn-outline" style={styles.actionBtn} title="Ubah Data" onClick={() => handleOpenEdit(m)}>✏️</button>
-                        <button className="btn btn-outline" style={{ ...styles.actionBtn, color: '#ef4444' }} title="Hapus Data" onClick={() => handleDelete(m.id)}>🗑️</button>
-                      </div>
-                    </td>
+          <>
+            <div style={styles.tableWrapper}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.thRow}>
+                    <th style={styles.th}>NIK</th>
+                    <th style={styles.th}>Nama Lengkap</th>
+                    <th style={styles.th}>Umur</th>
+                    <th style={styles.th}>Kategori</th>
+                    <th style={styles.th}>Gender</th>
+                    <th style={styles.th}>No Telepon</th>
+                    <th style={styles.th}>Status</th>
+                    <th style={styles.th}>Aksi</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filteredMustahiqs.map((m) => (
+                    <tr key={m.id} style={styles.tr}>
+                      <td style={styles.td}>{m.nik || '-'}</td>
+                      <td style={{ ...styles.td, fontWeight: '600' }}>{m.nama_lengkap}</td>
+                      <td style={styles.td}>
+                        {calculateAge(m.tanggal_lahir)}
+                        {(() => {
+                          const ageNum = getNumericalAge(m.tanggal_lahir);
+                          const isExceeded = ageNum !== null &&
+                            (m.kategori || '').toUpperCase().includes('YATIM') &&
+                            ageNum > maxAgeYatim;
+                          return isExceeded ? (
+                            <span style={{
+                              marginLeft: '8px',
+                              fontSize: '10px',
+                              backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                              border: '1px solid rgba(239, 68, 68, 0.25)',
+                              color: '#ef4444',
+                              padding: '2px 6px',
+                              borderRadius: '4px',
+                              fontWeight: 'bold',
+                              whiteSpace: 'nowrap'
+                            }} title={`Melebihi batas usia yatim (${maxAgeYatim} th)`}>
+                              ⚠️ Melebihi Batas
+                            </span>
+                          ) : null;
+                        })()}
+                      </td>
+                      <td style={styles.td}><span style={styles.tagKategori}>{m.kategori}</span></td>
+                      <td style={styles.td}>
+                        {m.jenis_kelamin === 'LAKI_LAKI' ? 'Laki-laki' : (m.jenis_kelamin === 'PEREMPUAN' ? 'Perempuan' : '-')}
+                      </td>
+                      <td style={styles.td}>{m.no_telepon || '-'}</td>
+                       <td style={styles.td}>
+                        <select
+                          value={m.status}
+                          onChange={(e) => handleQuickStatusChange(m.id, e.target.value)}
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '11px',
+                            borderRadius: '6px',
+                            border: '1px solid hsl(var(--border))',
+                            backgroundColor: m.status === 'AKTIF' ? 'rgba(16, 185, 129, 0.12)' : (m.status === 'SURVEY' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)'),
+                            color: m.status === 'AKTIF' ? '#10b981' : (m.status === 'SURVEY' ? '#f59e0b' : '#ef4444'),
+                            fontWeight: '600',
+                            cursor: 'pointer',
+                            outline: 'none',
+                          }}
+                        >
+                          <option value="AKTIF">AKTIF</option>
+                          <option value="SURVEY">SURVEY</option>
+                          <option value="TIDAK_AKTIF">TIDAK AKTIF</option>
+                        </select>
+                      </td>
+                      <td style={styles.td}>
+                        <div style={styles.actionGroup}>
+                          <button className="btn btn-outline" style={styles.actionBtn} title="Lihat Detail" onClick={() => handleOpenDetail(m)}>👁️</button>
+                          <button className="btn btn-outline" style={styles.actionBtn} title="Ubah Data" onClick={() => handleOpenEdit(m)}>✏️</button>
+                          <button className="btn btn-outline" style={{ ...styles.actionBtn, color: '#ef4444' }} title="Hapus Data" onClick={() => handleDelete(m.id)}>🗑️</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Premium Pagination Controls Footer */}
+            <div style={styles.paginationFooter}>
+              <div style={styles.paginationLimit}>
+                <span style={styles.paginationLabel}>Tampilkan:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(parseInt(e.target.value, 10));
+                    setCurrentPage(1);
+                  }}
+                  style={styles.pageSizeSelect}
+                >
+                  <option value={10}>10 Baris</option>
+                  <option value={25}>25 Baris</option>
+                  <option value={50}>50 Baris</option>
+                  <option value={100}>100 Baris</option>
+                </select>
+              </div>
+
+              <div style={styles.paginationInfo}>
+                Menampilkan <strong>{Math.min((currentPage - 1) * pageSize + 1, totalItems)}</strong> - <strong>{Math.min(currentPage * pageSize, totalItems)}</strong> dari <strong>{totalItems}</strong> data
+              </div>
+
+              <div style={styles.paginationNav}>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: '6px 10px',
+                    opacity: currentPage === 1 ? 0.4 : 1,
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Halaman Pertama"
+                >
+                  ⏮️
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  style={{
+                    padding: '6px 10px',
+                    opacity: currentPage === 1 ? 0.4 : 1,
+                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Sebelumnya"
+                >
+                  ◀️
+                </button>
+                
+                <span style={styles.pageIndicator}>
+                  Halaman <strong>{currentPage}</strong> dari <strong>{totalPages}</strong>
+                </span>
+
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  style={{
+                    padding: '6px 10px',
+                    opacity: currentPage === totalPages ? 0.4 : 1,
+                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Selanjutnya"
+                >
+                  ▶️
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  style={{
+                    padding: '6px 10px',
+                    opacity: currentPage === totalPages ? 0.4 : 1,
+                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer'
+                  }}
+                  title="Halaman Terakhir"
+                >
+                  ⏭️
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
 
@@ -967,5 +1084,48 @@ const styles = {
     borderRadius: '8px',
     cursor: 'pointer',
     width: '100%',
+  },
+  paginationFooter: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '16px 20px',
+    borderTop: '1px solid hsl(var(--border))',
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    flexWrap: 'wrap',
+    gap: '12px',
+  },
+  paginationLimit: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  paginationLabel: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+  },
+  pageSizeSelect: {
+    padding: '6px 12px',
+    fontSize: '12px',
+    borderRadius: '6px',
+    border: '1px solid hsl(var(--border))',
+    backgroundColor: 'hsl(var(--background))',
+    color: 'hsl(var(--foreground))',
+    outline: 'none',
+    cursor: 'pointer',
+  },
+  paginationInfo: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+  },
+  paginationNav: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  pageIndicator: {
+    fontSize: '12px',
+    margin: '0 8px',
+    color: 'hsl(var(--muted-foreground))',
   },
 };
