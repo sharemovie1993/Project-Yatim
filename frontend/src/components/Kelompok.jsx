@@ -282,7 +282,31 @@ export default function Kelompok() {
         <div style={styles.modalOverlay}>
           <div className="card" style={styles.largeModalContent}>
             <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>Anggota Kelompok: {selectedGroup?.nama_kelompok}</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <h3 style={styles.modalTitle}>Anggota Kelompok: {selectedGroup?.nama_kelompok}</h3>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button
+                    className="btn btn-outline"
+                    style={{ padding: '4px 8px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                    onClick={() => {
+                      const url = ApiService.getKelompokAnggotaPrintUrl(selectedGroup.id);
+                      window.open(url, '_blank');
+                    }}
+                  >
+                    🖨️ Cetak Anggota
+                  </button>
+                  <button
+                    className="btn btn-outline"
+                    style={{ padding: '4px 8px', fontSize: '11px', fontWeight: '600', cursor: 'pointer' }}
+                    onClick={() => {
+                      const url = ApiService.getKelompokAbsensiPrintUrl(selectedGroup.id);
+                      window.open(url, '_blank');
+                    }}
+                  >
+                    📋 Cetak Daftar Hadir
+                  </button>
+                </div>
+              </div>
               <button className="btn btn-outline" style={styles.closeBtn} onClick={() => setShowMemberModal(false)}>❌</button>
             </div>
 

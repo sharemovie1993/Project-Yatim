@@ -342,6 +342,337 @@ class PdfGenerator {
 
     doc.end();
   }
+
+  static async generateDaftarAnggotaPdf(kelompokId, tenantId, res) {
+    const kelompok = await prisma.kelompok.findFirst({
+      where: { id: kelompokId, tenant_id: tenantId }
+    });
+    if (!kelompok) throw new Error('Kelompok tidak ditemukan');
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId }
+    });
+    if (!tenant) throw new Error('Tenant tidak ditemukan');
+
+    const anggotaRows = await prisma.anggotaKelompok.findMany({
+      where: { kelompok_id: kelompokId, tenant_id: tenantId },
+      include: { mustahiq: true },
+      orderBy: { mustahiq: { nama_lengkap: 'asc' } }
+    });
+
+    let settings = {};
+    try {
+      settings = JSON.parse(tenant.settings || '{}');
+    } catch (e) {
+      settings = {};
+    }
+
+    const schoolName = tenant.name || '...........................................';
+    const address = settings.address || '......................................................................';
+    const kepalaSekolah = settings.kepala_sekolah || '...........................................';
+    const kopParent = settings.kop_parent || '';
+    const jabatanPimpinan = settings.jabatan_pimpinan || 'Kepala Sekolah';
+    const nipPimpinan = settings.nip_pimpinan || '';
+
+    // HTTP headers for inline display
+    const cleanGroupName = kelompok.nama_kelompok.replace(/[^a-zA-Z0-9]/g, '_');
+    res.setHeader('Content-Disposition', `inline; filename="Daftar_Anggota_Kelompok_${cleanGroupName}.pdf"`);
+
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    doc.pipe(res);
+
+    let logoPath = null;
+    if (settings.logo_url && settings.logo_url.startsWith('/api/uploads/')) {
+      const filename = settings.logo_url.replace('/api/uploads/', '');
+      const pathToCheck = path.join(__dirname, '../../uploads', filename);
+      if (fs.existsSync(pathToCheck)) {
+        logoPath = pathToCheck;
+      }
+    }
+
+    // Draw Kop Surat
+    let currentY = drawKopSurat(doc, logoPath, kopParent, schoolName, address, settings);
+
+    // Title
+    doc.fontSize(11).font('Helvetica-Bold').fillColor('#000000').text('DAFTAR ANGGOTA KELOMPOK DISTRIBUSI', { align: 'center' });
+    doc.fontSize(9.5).font('Helvetica-Bold').text(`KELOMPOK: ${kelompok.nama_kelompok.toUpperCase()}`, { align: 'center' });
+    doc.fontSize(8.5).font('Helvetica').text(`Wilayah Cakupan: ${kelompok.wilayah || 'Umum'} | Keterangan: ${kelompok.keterangan || '-'}`, { align: 'center' });
+    doc.moveDown(1.2);
+    currentY = doc.y;
+
+    // Table of Members
+    // Columns: No (30), NIK (85), Nama (125), Gender (45), Kategori (60), Alamat (110), Status (60) = Total 515 (starts at x=40 to 555)
+    const drawRowBorders = (yStart, yEnd) => {
+      doc.lineJoin('miter').lineWidth(0.5).strokeColor('#000000');
+      doc.moveTo(40, yStart).lineTo(40, yEnd).stroke();
+      doc.moveTo(70, yStart).lineTo(70, yEnd).stroke();
+      doc.moveTo(155, yStart).lineTo(155, yEnd).stroke();
+      doc.moveTo(280, yStart).lineTo(280, yEnd).stroke();
+      doc.moveTo(325, yStart).lineTo(325, yEnd).stroke();
+      doc.moveTo(385, yStart).lineTo(385, yEnd).stroke();
+      doc.moveTo(495, yStart).lineTo(495, yEnd).stroke();
+      doc.moveTo(555, yStart).lineTo(555, yEnd).stroke();
+      doc.moveTo(40, yEnd).lineTo(555, yEnd).stroke();
+    };
+
+    const drawTableHeader = (y) => {
+      doc.save();
+      doc.fillColor('#e5e7eb').rect(40, y, 515, 20).fill();
+      doc.restore();
+
+      doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#000000');
+      doc.text('No', 42, y + 6, { width: 26, align: 'center' });
+      doc.text('Nomor NIK', 72, y + 6, { width: 81 });
+      doc.text('Nama Lengkap Mustahiq', 157, y + 6, { width: 121 });
+      doc.text('L/P', 282, y + 6, { width: 41, align: 'center' });
+      doc.text('Kategori', 327, y + 6, { width: 56 });
+      doc.text('Alamat Lengkap', 387, y + 6, { width: 106 });
+      doc.text('Status', 497, y + 6, { width: 56, align: 'center' });
+
+      drawRowBorders(y, y + 20);
+    };
+
+    drawTableHeader(currentY);
+    currentY += 20;
+
+    let index = 1;
+    for (const r of anggotaRows) {
+      const m = r.mustahiq;
+      if (!m) continue;
+
+      if (currentY > 740) {
+        doc.addPage();
+        currentY = 50;
+        drawTableHeader(currentY);
+        currentY += 20;
+      }
+
+      doc.fontSize(8).font('Helvetica').fillColor('#000000');
+      doc.text(index.toString(), 42, currentY + 5, { width: 26, align: 'center' });
+      doc.text(m.nik || '-', 72, currentY + 5, { width: 81 });
+      doc.text(m.nama_lengkap, 157, currentY + 5, { width: 121 });
+      doc.text(m.jenis_kelamin || '-', 282, currentY + 5, { width: 41, align: 'center' });
+      doc.text(m.kategori, 327, currentY + 5, { width: 56 });
+      doc.text(m.alamat_lengkap || '-', 387, currentY + 5, { width: 106 });
+      doc.text(m.status || 'SURVEY', 497, currentY + 5, { width: 56, align: 'center' });
+
+      drawRowBorders(currentY, currentY + 20);
+      currentY += 20;
+      index++;
+    }
+
+    if (index === 1) {
+      doc.fontSize(8.5).font('Helvetica-Oblique').text('Belum ada anggota terdaftar di kelompok ini.', 40, currentY + 10, { align: 'center' });
+      currentY += 30;
+    }
+
+    currentY += 20;
+    if (currentY > 680) {
+      doc.addPage();
+      currentY = 50;
+    }
+
+    doc.fontSize(9.5).font('Helvetica').fillColor('#000000');
+    const signatureY = currentY + 15;
+
+    const kota = settings.kota || '...........................................';
+    const dateStr = `${kota}, ${formatDateIndonesian(new Date().toISOString().slice(0, 10))}`;
+    doc.text(dateStr, 380, currentY, { align: 'left' });
+
+    doc.text('Mengetahui,', 380, signatureY);
+    doc.text(jabatanPimpinan, 380, signatureY + 15);
+    doc.font('Helvetica-Bold').text(kepalaSekolah, 380, signatureY + 80, { underline: true });
+    if (nipPimpinan) {
+      doc.fontSize(8.5).font('Helvetica').text(`NIP/NIK. ${nipPimpinan}`, 380, signatureY + 95);
+    }
+
+    let stempelPath = null;
+    if (settings.stempel_url && settings.stempel_url.startsWith('/api/uploads/')) {
+      const filename = settings.stempel_url.replace('/api/uploads/', '');
+      const pathToCheck = path.join(__dirname, '../../uploads', filename);
+      if (fs.existsSync(pathToCheck)) {
+        stempelPath = pathToCheck;
+      }
+    }
+
+    if (stempelPath) {
+      doc.image(stempelPath, 415, signatureY + 25, { width: 65, height: 65 });
+    }
+
+    doc.end();
+  }
+
+  static async generateDaftarHadirPdf(kelompokId, tenantId, res) {
+    const kelompok = await prisma.kelompok.findFirst({
+      where: { id: kelompokId, tenant_id: tenantId }
+    });
+    if (!kelompok) throw new Error('Kelompok tidak ditemukan');
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId }
+    });
+    if (!tenant) throw new Error('Tenant tidak ditemukan');
+
+    const anggotaRows = await prisma.anggotaKelompok.findMany({
+      where: { kelompok_id: kelompokId, tenant_id: tenantId },
+      include: { mustahiq: true },
+      orderBy: { mustahiq: { nama_lengkap: 'asc' } }
+    });
+
+    let settings = {};
+    try {
+      settings = JSON.parse(tenant.settings || '{}');
+    } catch (e) {
+      settings = {};
+    }
+
+    const schoolName = tenant.name || '...........................................';
+    const address = settings.address || '......................................................................';
+    const kepalaSekolah = settings.kepala_sekolah || '...........................................';
+    const kopParent = settings.kop_parent || '';
+    const jabatanPimpinan = settings.jabatan_pimpinan || 'Kepala Sekolah';
+    const nipPimpinan = settings.nip_pimpinan || '';
+
+    // HTTP headers for inline display
+    const cleanGroupName = kelompok.nama_kelompok.replace(/[^a-zA-Z0-9]/g, '_');
+    res.setHeader('Content-Disposition', `inline; filename="Daftar_Hadir_Kelompok_${cleanGroupName}.pdf"`);
+
+    const doc = new PDFDocument({ margin: 40, size: 'A4' });
+    doc.pipe(res);
+
+    let logoPath = null;
+    if (settings.logo_url && settings.logo_url.startsWith('/api/uploads/')) {
+      const filename = settings.logo_url.replace('/api/uploads/', '');
+      const pathToCheck = path.join(__dirname, '../../uploads', filename);
+      if (fs.existsSync(pathToCheck)) {
+        logoPath = pathToCheck;
+      }
+    }
+
+    // Draw Kop Surat
+    let currentY = drawKopSurat(doc, logoPath, kopParent, schoolName, address, settings);
+
+    // Title
+    doc.fontSize(11).font('Helvetica-Bold').fillColor('#000000').text('DAFTAR HADIR PERTEMUAN KELOMPOK DISTRIBUSI', { align: 'center' });
+    doc.fontSize(9.5).font('Helvetica-Bold').text(`KELOMPOK: ${kelompok.nama_kelompok.toUpperCase()}`, { align: 'center' });
+    doc.fontSize(8.5).font('Helvetica').text(`Wilayah: ${kelompok.wilayah || 'Umum'} | Lembaga: ${schoolName}`, { align: 'center' });
+    doc.moveDown(0.6);
+    currentY = doc.y;
+
+    // Fillable fields for manually recording event info
+    doc.fontSize(8.5).font('Helvetica').fillColor('#000000');
+    doc.text('Nama Kegiatan  : ....................................................................................', 50, currentY);
+    doc.text('Hari / Tanggal  : ....................................................................................', 50, currentY + 12);
+    doc.text('Tempat Kegiatan : ....................................................................................', 50, currentY + 24);
+    doc.moveDown(1.8);
+    currentY = doc.y;
+
+    // Table of Members for attendance
+    // Columns: No (30), Nama (150), NIK (90), Kategori (65), Alamat (100), Tanda Tangan (80) = Total 515 (starts at x=40 to 555)
+    const drawRowBorders = (yStart, yEnd) => {
+      doc.lineJoin('miter').lineWidth(0.5).strokeColor('#000000');
+      doc.moveTo(40, yStart).lineTo(40, yEnd).stroke();
+      doc.moveTo(70, yStart).lineTo(70, yEnd).stroke();
+      doc.moveTo(220, yStart).lineTo(220, yEnd).stroke();
+      doc.moveTo(310, yStart).lineTo(310, yEnd).stroke();
+      doc.moveTo(375, yStart).lineTo(375, yEnd).stroke();
+      doc.moveTo(475, yStart).lineTo(475, yEnd).stroke();
+      doc.moveTo(555, yStart).lineTo(555, yEnd).stroke();
+      doc.moveTo(40, yEnd).lineTo(555, yEnd).stroke();
+    };
+
+    const drawTableHeader = (y) => {
+      doc.save();
+      doc.fillColor('#e5e7eb').rect(40, y, 515, 20).fill();
+      doc.restore();
+
+      doc.fontSize(8.5).font('Helvetica-Bold').fillColor('#000000');
+      doc.text('No', 42, y + 6, { width: 26, align: 'center' });
+      doc.text('Nama Lengkap Mustahiq', 74, y + 6, { width: 142 });
+      doc.text('Nomor NIK', 224, y + 6, { width: 82 });
+      doc.text('Kategori', 314, y + 6, { width: 62 });
+      doc.text('Alamat Lengkap', 379, y + 6, { width: 92 });
+      doc.text('Tanda Tangan', 479, y + 6, { width: 72, align: 'center' });
+
+      drawRowBorders(y, y + 20);
+    };
+
+    drawTableHeader(currentY);
+    currentY += 20;
+
+    let index = 1;
+    for (const r of anggotaRows) {
+      const m = r.mustahiq;
+      if (!m) continue;
+
+      if (currentY > 740) {
+        doc.addPage();
+        currentY = 50;
+        drawTableHeader(currentY);
+        currentY += 20;
+      }
+
+      doc.fontSize(8).font('Helvetica').fillColor('#000000');
+      doc.text(index.toString(), 42, currentY + 6, { width: 26, align: 'center' });
+      doc.text(m.nama_lengkap, 74, currentY + 6, { width: 142 });
+      doc.text(m.nik || '-', 224, currentY + 6, { width: 82 });
+      doc.text(m.kategori, 314, currentY + 6, { width: 62 });
+      doc.text(m.alamat_lengkap || '-', 379, currentY + 6, { width: 92 });
+
+      // Attendance signature spot (zig-zag layout: odd indices left, even indices right)
+      const sigText = index % 2 !== 0 ? `${index}. .................` : `      ${index}. .................`;
+      doc.fontSize(7.5).text(sigText, 477, currentY + 6, { width: 74 });
+
+      drawRowBorders(currentY, currentY + 20);
+      currentY += 20;
+      index++;
+    }
+
+    if (index === 1) {
+      doc.fontSize(8.5).font('Helvetica-Oblique').text('Belum ada anggota terdaftar di kelompok ini.', 40, currentY + 10, { align: 'center' });
+      currentY += 30;
+    }
+
+    currentY += 20;
+    if (currentY > 660) {
+      doc.addPage();
+      currentY = 50;
+    }
+
+    doc.fontSize(9.5).font('Helvetica').fillColor('#000000');
+    const signatureY = currentY + 15;
+
+    const kota = settings.kota || '...........................................';
+    const dateStr = `${kota}, ...................................`;
+    doc.text(dateStr, 380, currentY, { align: 'left' });
+
+    doc.text('Mengetahui,', 50, signatureY);
+    doc.text(jabatanPimpinan, 50, signatureY + 15);
+    doc.font('Helvetica-Bold').text(kepalaSekolah, 50, signatureY + 80, { underline: true });
+    if (nipPimpinan) {
+      doc.fontSize(8.5).font('Helvetica').text(`NIP/NIK. ${nipPimpinan}`, 50, signatureY + 95);
+    }
+
+    let stempelPath = null;
+    if (settings.stempel_url && settings.stempel_url.startsWith('/api/uploads/')) {
+      const filename = settings.stempel_url.replace('/api/uploads/', '');
+      const pathToCheck = path.join(__dirname, '../../uploads', filename);
+      if (fs.existsSync(pathToCheck)) {
+        stempelPath = pathToCheck;
+      }
+    }
+
+    if (stempelPath) {
+      doc.image(stempelPath, 85, signatureY + 25, { width: 65, height: 65 });
+    }
+
+    doc.fontSize(9.5).font('Helvetica');
+    doc.text('Dibuat oleh,', 380, signatureY);
+    doc.text('Petugas Lapangan', 380, signatureY + 15);
+    doc.font('Helvetica-Bold').text('...........................................', 380, signatureY + 80, { underline: true });
+
+    doc.end();
+  }
 }
 
 module.exports = PdfGenerator;

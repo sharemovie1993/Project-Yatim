@@ -269,6 +269,17 @@ class ApiService {
     return `${BASE_URL}/v1/program/${programId}/spj-pdf?tenant_id=${tenantId}`;
   }
 
+  // Kelompok PDF Print URLs
+  static getKelompokAnggotaPrintUrl(kelompokId) {
+    const tenantId = this.getTenantId();
+    return `${BASE_URL}/v1/kelompok/${kelompokId}/print-anggota?tenant_id=${tenantId}`;
+  }
+
+  static getKelompokAbsensiPrintUrl(kelompokId) {
+    const tenantId = this.getTenantId();
+    return `${BASE_URL}/v1/kelompok/${kelompokId}/print-absensi?tenant_id=${tenantId}`;
+  }
+
   // Tenant / School Profile
   static async getTenantProfile() {
     return this.request('/v1/tenant/profile');

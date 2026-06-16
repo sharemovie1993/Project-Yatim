@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const prisma = require('../prisma');
+const PdfGenerator = require('../services/pdfGenerator');
 
 const getTenantId = (req) => {
   return req.headers['x-tenant-id'] || req.query.tenant_id;
@@ -204,6 +205,44 @@ router.delete('/:kelompokId/anggota/:mustahiqId', async (req, res) => {
   } catch (error) {
     console.error('[DELETE Anggota Kelompok Error]', error);
     res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/v1/kelompok/:kelompokId/print-anggota
+router.get('/:kelompokId/print-anggota', async (req, res) => {
+  try {
+    const { kelompokId } = req.params;
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    await PdfGenerator.generateDaftarAnggotaPdf(kelompokId, tenantId, res);
+  } catch (error) {
+    console.error('[GET Print Anggota Kelompok Error]', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+});
+
+// GET /api/v1/kelompok/:kelompokId/print-absensi
+router.get('/:kelompokId/print-absensi', async (req, res) => {
+  try {
+    const { kelompokId } = req.params;
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    await PdfGenerator.generateDaftarHadirPdf(kelompokId, tenantId, res);
+  } catch (error) {
+    console.error('[GET Print Absensi Kelompok Error]', error);
+    if (!res.headersSent) {
+      res.status(500).json({ success: false, error: error.message });
+    }
   }
 });
 
