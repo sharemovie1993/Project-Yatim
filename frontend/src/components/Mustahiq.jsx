@@ -21,6 +21,9 @@ export default function Mustahiq() {
   const [totalItems, setTotalItems] = useState(0);
   const [stats, setStats] = useState({ total: 0, aktif: 0, survey: 0, tidakAktif: 0 });
 
+  // Bulk Selection state
+  const [selectedIds, setSelectedIds] = useState([]);
+
   // Form Modal state
   const [showModal, setShowModal] = useState(false);
   const [isEdit, setIsEdit] = useState(false);
@@ -99,15 +102,85 @@ export default function Mustahiq() {
       }
     };
     loadConfig();
+
+    // Inject slideUp keyframes styles for premium bulk actions toolbar
+    if (!document.getElementById('mustahiq-bulk-action-styles')) {
+      const styleEl = document.createElement('style');
+      styleEl.id = 'mustahiq-bulk-action-styles';
+      styleEl.innerHTML = `
+        @keyframes slideUp {
+          from {
+            transform: translate(-50%, 20px);
+            opacity: 0;
+          }
+          to {
+            transform: translate(-50%, 0);
+            opacity: 1;
+          }
+        }
+      `;
+      document.head.appendChild(styleEl);
+    }
   }, []);
 
   // Fetch paginated data whenever filter states or page states change
   useEffect(() => {
     const handler = setTimeout(() => {
       loadData(currentPage, pageSize);
+      setSelectedIds([]); // Clear selection when filter or page changes
     }, 300); // Debounce search changes
     return () => clearTimeout(handler);
   }, [currentPage, pageSize, search, filterKategori, filterStatus, filterNik, filterAgeGroup]);
+
+  // Selection & Bulk Handlers
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      const visibleIds = filteredMustahiqs.map(m => m.id);
+      setSelectedIds(visibleIds);
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectRow = (id, checked) => {
+    if (checked) {
+      setSelectedIds(prev => [...prev, id]);
+    } else {
+      setSelectedIds(prev => prev.filter(item => item !== id));
+    }
+  };
+
+  const handleBulkStatusChange = async (newStatus) => {
+    if (selectedIds.length === 0) return;
+    try {
+      setLoading(true);
+      await ApiService.bulkUpdateStatusMustahiq(selectedIds, newStatus);
+      alert(`Berhasil mengubah status ${selectedIds.length} mustahiq menjadi ${newStatus}.`);
+      setSelectedIds([]);
+      loadData();
+    } catch (err) {
+      alert('Gagal mengubah status masal: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return;
+    if (!confirm(`Apakah Anda yakin ingin menghapus ${selectedIds.length} data mustahiq yang terpilih? Tindakan ini tidak dapat dibatalkan.`)) return;
+    
+    try {
+      setLoading(true);
+      await ApiService.bulkDeleteMustahiq(selectedIds);
+      alert(`Berhasil menghapus ${selectedIds.length} data mustahiq.`);
+      setSelectedIds([]);
+      loadData();
+    } catch (err) {
+      alert('Gagal menghapus masal: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleOpenAdd = () => {
     setIsEdit(false);
@@ -395,6 +468,14 @@ export default function Mustahiq() {
               <table style={styles.table}>
                 <thead>
                   <tr style={styles.thRow}>
+                    <th style={{ ...styles.th, width: '40px', paddingLeft: '20px' }}>
+                      <input
+                        type="checkbox"
+                        checked={filteredMustahiqs.length > 0 && selectedIds.length === filteredMustahiqs.length}
+                        onChange={handleSelectAll}
+                        style={styles.checkbox}
+                      />
+                    </th>
                     <th style={styles.th}>NIK</th>
                     <th style={styles.th}>Nama Lengkap</th>
                     <th style={styles.th}>Umur</th>
@@ -406,69 +487,83 @@ export default function Mustahiq() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredMustahiqs.map((m) => (
-                    <tr key={m.id} style={styles.tr}>
-                      <td style={styles.td}>{m.nik || '-'}</td>
-                      <td style={{ ...styles.td, fontWeight: '600' }}>{m.nama_lengkap}</td>
-                      <td style={styles.td}>
-                        {calculateAge(m.tanggal_lahir)}
-                        {(() => {
-                          const ageNum = getNumericalAge(m.tanggal_lahir);
-                          const isExceeded = ageNum !== null &&
-                            (m.kategori || '').toUpperCase().includes('YATIM') &&
-                            ageNum > maxAgeYatim;
-                          return isExceeded ? (
-                            <span style={{
-                              marginLeft: '8px',
-                              fontSize: '10px',
-                              backgroundColor: 'rgba(239, 68, 68, 0.12)',
-                              border: '1px solid rgba(239, 68, 68, 0.25)',
-                              color: '#ef4444',
-                              padding: '2px 6px',
-                              borderRadius: '4px',
-                              fontWeight: 'bold',
-                              whiteSpace: 'nowrap'
-                            }} title={`Melebihi batas usia yatim (${maxAgeYatim} th)`}>
-                              ⚠️ Melebihi Batas
-                            </span>
-                          ) : null;
-                        })()}
-                      </td>
-                      <td style={styles.td}><span style={styles.tagKategori}>{m.kategori}</span></td>
-                      <td style={styles.td}>
-                        {m.jenis_kelamin === 'LAKI_LAKI' ? 'Laki-laki' : (m.jenis_kelamin === 'PEREMPUAN' ? 'Perempuan' : '-')}
-                      </td>
-                      <td style={styles.td}>{m.no_telepon || '-'}</td>
-                       <td style={styles.td}>
-                        <select
-                          value={m.status}
-                          onChange={(e) => handleQuickStatusChange(m.id, e.target.value)}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '11px',
-                            borderRadius: '6px',
-                            border: '1px solid hsl(var(--border))',
-                            backgroundColor: m.status === 'AKTIF' ? 'rgba(16, 185, 129, 0.12)' : (m.status === 'SURVEY' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)'),
-                            color: m.status === 'AKTIF' ? '#10b981' : (m.status === 'SURVEY' ? '#f59e0b' : '#ef4444'),
-                            fontWeight: '600',
-                            cursor: 'pointer',
-                            outline: 'none',
-                          }}
-                        >
-                          <option value="AKTIF">AKTIF</option>
-                          <option value="SURVEY">SURVEY</option>
-                          <option value="TIDAK_AKTIF">TIDAK AKTIF</option>
-                        </select>
-                      </td>
-                      <td style={styles.td}>
-                        <div style={styles.actionGroup}>
-                          <button className="btn btn-outline" style={styles.actionBtn} title="Lihat Detail" onClick={() => handleOpenDetail(m)}>👁️</button>
-                          <button className="btn btn-outline" style={styles.actionBtn} title="Ubah Data" onClick={() => handleOpenEdit(m)}>✏️</button>
-                          <button className="btn btn-outline" style={{ ...styles.actionBtn, color: '#ef4444' }} title="Hapus Data" onClick={() => handleDelete(m.id)}>🗑️</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                  {filteredMustahiqs.map((m) => {
+                    const isSelected = selectedIds.includes(m.id);
+                    return (
+                      <tr key={m.id} style={{
+                        ...styles.tr,
+                        backgroundColor: isSelected ? 'rgba(5, 150, 105, 0.04)' : undefined
+                      }}>
+                        <td style={{ ...styles.td, width: '40px', paddingLeft: '20px' }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => handleSelectRow(m.id, e.target.checked)}
+                            style={styles.checkbox}
+                          />
+                        </td>
+                        <td style={styles.td}>{m.nik || '-'}</td>
+                        <td style={{ ...styles.td, fontWeight: '600' }}>{m.nama_lengkap}</td>
+                        <td style={styles.td}>
+                          {calculateAge(m.tanggal_lahir)}
+                          {(() => {
+                            const ageNum = getNumericalAge(m.tanggal_lahir);
+                            const isExceeded = ageNum !== null &&
+                              (m.kategori || '').toUpperCase().includes('YATIM') &&
+                              ageNum > maxAgeYatim;
+                            return isExceeded ? (
+                              <span style={{
+                                marginLeft: '8px',
+                                fontSize: '10px',
+                                backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                                border: '1px solid rgba(239, 68, 68, 0.25)',
+                                color: '#ef4444',
+                                padding: '2px 6px',
+                                borderRadius: '4px',
+                                fontWeight: 'bold',
+                                whiteSpace: 'nowrap'
+                              }} title={`Melebihi batas usia yatim (${maxAgeYatim} th)`}>
+                                ⚠️ Melebihi Batas
+                              </span>
+                            ) : null;
+                          })()}
+                        </td>
+                        <td style={styles.td}><span style={styles.tagKategori}>{m.kategori}</span></td>
+                        <td style={styles.td}>
+                          {m.jenis_kelamin === 'LAKI_LAKI' ? 'Laki-laki' : (m.jenis_kelamin === 'PEREMPUAN' ? 'Perempuan' : '-')}
+                        </td>
+                        <td style={styles.td}>{m.no_telepon || '-'}</td>
+                         <td style={styles.td}>
+                          <select
+                            value={m.status}
+                            onChange={(e) => handleQuickStatusChange(m.id, e.target.value)}
+                            style={{
+                              padding: '4px 8px',
+                              fontSize: '11px',
+                              borderRadius: '6px',
+                              border: '1px solid hsl(var(--border))',
+                              backgroundColor: m.status === 'AKTIF' ? 'rgba(16, 185, 129, 0.12)' : (m.status === 'SURVEY' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)'),
+                              color: m.status === 'AKTIF' ? '#10b981' : (m.status === 'SURVEY' ? '#f59e0b' : '#ef4444'),
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              outline: 'none',
+                            }}
+                          >
+                            <option value="AKTIF">AKTIF</option>
+                            <option value="SURVEY">SURVEY</option>
+                            <option value="TIDAK_AKTIF">TIDAK AKTIF</option>
+                          </select>
+                        </td>
+                        <td style={styles.td}>
+                          <div style={styles.actionGroup}>
+                            <button className="btn btn-outline" style={styles.actionBtn} title="Lihat Detail" onClick={() => handleOpenDetail(m)}>👁️</button>
+                            <button className="btn btn-outline" style={styles.actionBtn} title="Ubah Data" onClick={() => handleOpenEdit(m)}>✏️</button>
+                            <button className="btn btn-outline" style={{ ...styles.actionBtn, color: '#ef4444' }} title="Hapus Data" onClick={() => handleDelete(m.id)}>🗑️</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -826,6 +921,62 @@ export default function Mustahiq() {
           </div>
         </div>
       )}
+
+      {/* Floating Bulk Action Bar */}
+      {selectedIds.length > 0 && (
+        <div style={styles.bulkBarContainer}>
+          <div className="card glass" style={styles.bulkBar}>
+            <span style={styles.bulkBarInfo}>
+              <strong>{selectedIds.length}</strong> mustahiq terpilih
+            </span>
+            <div style={styles.bulkBarDivider}></div>
+            <div style={styles.bulkBarActions}>
+              <span style={styles.bulkBarLabel}>Ubah Status:</span>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ ...styles.bulkActionBtn, borderColor: 'hsl(var(--primary))', color: 'hsl(var(--primary))' }}
+                onClick={() => handleBulkStatusChange('AKTIF')}
+              >
+                AKTIF
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ ...styles.bulkActionBtn, borderColor: 'hsl(var(--accent))', color: 'hsl(var(--accent))' }}
+                onClick={() => handleBulkStatusChange('SURVEY')}
+              >
+                SURVEY
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ ...styles.bulkActionBtn, borderColor: '#ef4444', color: '#ef4444' }}
+                onClick={() => handleBulkStatusChange('TIDAK_AKTIF')}
+              >
+                NON-AKTIF
+              </button>
+              <div style={styles.bulkBarDivider}></div>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ ...styles.bulkActionBtn, backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: '#ef4444' }}
+                onClick={handleBulkDelete}
+              >
+                🗑️ Hapus Terpilih
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={styles.bulkCancelBtn}
+                onClick={() => setSelectedIds([])}
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1127,5 +1278,69 @@ const styles = {
     fontSize: '12px',
     margin: '0 8px',
     color: 'hsl(var(--muted-foreground))',
+  },
+  checkbox: {
+    width: '16px',
+    height: '16px',
+    cursor: 'pointer',
+    accentColor: 'hsl(var(--primary))',
+  },
+  bulkBarContainer: {
+    position: 'fixed',
+    bottom: '24px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 9999,
+    width: 'auto',
+    maxWidth: '90%',
+    display: 'flex',
+    justifyContent: 'center',
+    animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+  },
+  bulkBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+    padding: '12px 24px',
+    borderRadius: '12px',
+    border: '1px solid hsl(var(--border))',
+    boxShadow: '0 10px 30px -10px rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(20, 20, 20, 0.85)',
+    backdropFilter: 'blur(12px)',
+    flexWrap: 'wrap',
+  },
+  bulkBarInfo: {
+    fontSize: '13px',
+    color: 'hsl(var(--foreground))',
+  },
+  bulkBarDivider: {
+    width: '1px',
+    height: '24px',
+    backgroundColor: 'hsl(var(--border))',
+  },
+  bulkBarActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap',
+  },
+  bulkBarLabel: {
+    fontSize: '12px',
+    color: 'hsl(var(--muted-foreground))',
+    marginRight: '4px',
+  },
+  bulkActionBtn: {
+    padding: '5px 12px',
+    fontSize: '11px',
+    fontWeight: '600',
+    borderRadius: '6px',
+    cursor: 'pointer',
+  },
+  bulkCancelBtn: {
+    padding: '5px 12px',
+    fontSize: '11px',
+    borderRadius: '6px',
+    color: 'hsl(var(--muted-foreground))',
+    cursor: 'pointer',
   },
 };

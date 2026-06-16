@@ -891,5 +891,88 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
   }
 });
 
+// POST /api/v1/mustahiq/bulk-status
+router.post('/bulk-status', async (req, res) => {
+  try {
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    const { ids, status } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'IDs array is required and cannot be empty.' });
+    }
+
+    if (!['AKTIF', 'SURVEY', 'TIDAK_AKTIF'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'Status tidak valid.' });
+    }
+
+    // Tenant isolation check
+    const countMatches = await prisma.mustahiq.count({
+      where: {
+        id: { in: ids },
+        tenant_id: tenantId
+      }
+    });
+
+    if (countMatches !== ids.length) {
+      return res.status(403).json({ success: false, error: 'Beberapa data mustahiq yang dipilih tidak valid atau bukan milik instansi Anda.' });
+    }
+
+    const updateRes = await prisma.mustahiq.updateMany({
+      where: {
+        id: { in: ids },
+        tenant_id: tenantId
+      },
+      data: { status }
+    });
+
+    res.json({ success: true, count: updateRes.count });
+  } catch (error) {
+    console.error('[Bulk Status Mustahiq Error]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/v1/mustahiq/bulk-delete
+router.post('/bulk-delete', async (req, res) => {
+  try {
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, error: 'IDs array is required and cannot be empty.' });
+    }
+
+    // Tenant isolation check
+    const countMatches = await prisma.mustahiq.count({
+      where: {
+        id: { in: ids },
+        tenant_id: tenantId
+      }
+    });
+
+    if (countMatches !== ids.length) {
+      return res.status(403).json({ success: false, error: 'Beberapa data mustahiq yang dipilih tidak valid atau bukan milik instansi Anda.' });
+    }
+
+    const deleteRes = await prisma.mustahiq.deleteMany({
+      where: {
+        id: { in: ids },
+        tenant_id: tenantId
+      }
+    });
+
+    res.json({ success: true, count: deleteRes.count });
+  } catch (error) {
+    console.error('[Bulk Delete Mustahiq Error]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;
 

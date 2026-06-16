@@ -123,6 +123,20 @@ class ApiService {
     });
   }
 
+  static async bulkUpdateStatusMustahiq(ids, status) {
+    return this.request('/v1/mustahiq/bulk-status', {
+      method: 'POST',
+      body: JSON.stringify({ ids, status }),
+    });
+  }
+
+  static async bulkDeleteMustahiq(ids) {
+    return this.request('/v1/mustahiq/bulk-delete', {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  }
+
   // Excel Bulk Import & Export URLs
   static getExportExcelUrl() {
     const tenantId = this.getTenantId();
