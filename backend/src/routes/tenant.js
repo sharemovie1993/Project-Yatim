@@ -271,6 +271,39 @@ router.put('/profile/custom-domain', async (req, res) => {
       data: { custom_domain: targetDomain }
     });
 
+    // Sync to central Licensing Server if a license/VPN key is available
+    let syncError = null;
+    try {
+      const settings = JSON.parse(updated.settings || '{}');
+      const vpnKey = settings.vpn_license_key || updated.license_key;
+      
+      if (vpnKey) {
+        const LICENSE_SERVER_URL = process.env.LICENSE_SERVER_URL || 'https://api.absenta.id';
+        const response = await fetch(`${LICENSE_SERVER_URL}/api/license/tunnel/custom-domain`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            license_key: vpnKey.trim(),
+            custom_domain: targetDomain
+          })
+        });
+        const syncResult = await response.json();
+        if (!syncResult.success) {
+          syncError = syncResult.message;
+        }
+      }
+    } catch (syncErr) {
+      console.warn('[Sync Custom Domain Warning]', syncErr.message);
+      syncError = syncErr.message;
+    }
+
+    if (syncError) {
+      return res.status(500).json({
+        success: false,
+        error: `Gagal sinkronisasi domain kustom ke cloud gateway: ${syncError}`
+      });
+    }
+
     res.json({
       success: true,
       message: targetDomain 
