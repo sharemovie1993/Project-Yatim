@@ -124,7 +124,36 @@ class LicenseVerifier {
         }
       }
 
+      // Explicit failure from server (license not found, expired, or rejected)
       console.warn(`[LicenseVerifier] Online validation failed for key: ${licenseKey}. Msg: ${result.message}`);
+      
+      // IMPORTANT: If the server explicitly says the license is not valid, we MUST clear our local cache
+      // so the UI doesn't keep showing "AKTIF" for a deleted/expired license.
+      try {
+        let settings = {};
+        try {
+          settings = JSON.parse(tenant.settings || '{}');
+        } catch (e) {
+          settings = {};
+        }
+        
+        // Clear license-related fields
+        delete settings.license_token;
+        delete settings.license_expires_at;
+        // Optional: keep school_name if already set
+        
+        await prisma.tenant.update({
+          where: { id: tenantId },
+          data: {
+            settings: JSON.stringify(settings),
+            is_active: false
+          }
+        });
+        console.log(`[LicenseVerifier] Local license cache cleared for Tenant ${tenantId} due to server rejection.`);
+      } catch (clearErr) {
+        console.error('[LicenseVerifier] Failed to clear local license cache:', clearErr.message);
+      }
+
       return { success: false, message: result.message || 'Validation failed.' };
 
     } catch (error) {

@@ -438,11 +438,11 @@ export default function Billing() {
     try {
       const res = await ApiService.syncLicense();
       await showAlert(res.message || 'Sinkronisasi lisensi berhasil.');
-      await loadData();
     } catch (err) {
       await showAlert('Gagal sinkronisasi lisensi: ' + err.message);
     } finally {
       setSyncing(false);
+      await loadData(); // Refresh data regardless of success/fail to reflect potential cache clearing
     }
   };
 
