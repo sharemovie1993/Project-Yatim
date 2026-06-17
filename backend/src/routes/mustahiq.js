@@ -822,10 +822,21 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
       const rawStatus = getVal(['Status']) || 'SURVEY';
       const rawCatatan = getVal(['Catatan', 'Keterangan', 'Info']);
 
-      // Skip empty or template rows
-      if (!rawNama || String(rawNama).trim() === '' || rawNama === 'Budi Santoso' || rawNama === 'Aisyah Putri') {
+      // --- HARDENING: IGNORE NON-DATA ROWS (FOOTERS/NOTES) ---
+      const cleanNama = String(rawNama || '').trim();
+      const blacklistedNames = ['catatan', 'aturan', 'kolom', 'jenis kelamin', 'status kelayakan', 'nik harus', 'nama lengkap'];
+      
+      if (!cleanNama || 
+          cleanNama === '' || 
+          cleanNama === 'Budi Santoso' || 
+          cleanNama === 'Aisyah Putri' ||
+          blacklistedNames.some(bn => cleanNama.toLowerCase().includes(bn))) {
         return;
       }
+
+      // Ensure mandatory fields for Prisma
+      const finalAlamat = String(rawAlamat || '').trim() || 'Alamat tidak diisi';
+      const finalKategori = String(rawKategori || 'DHUAFA').trim().toUpperCase();
         let formattedDate = null;
         if (rawTanggalLahir) {
           if (rawTanggalLahir instanceof Date) {
@@ -885,18 +896,18 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
         if (parsedNik) {
           const isDuplicate = payloads.some(p => p.nik === parsedNik);
           if (isDuplicate) {
-            console.warn(`[Import Excel] Duplicate NIK in Excel file for ${rawNama}: ${parsedNik}. Skipping NIK.`);
+            console.warn(`[Import Excel] Duplicate NIK in Excel file for ${cleanNama}: ${parsedNik}. Skipping NIK.`);
             parsedNik = null; // Nullify NIK so it can still be imported as a new record without NIK
           }
         }
 
         payloads.push({
           nik: parsedNik,
-          nama_lengkap: String(rawNama).trim(),
-          kategori: String(rawKategori).trim().toUpperCase(),
+          nama_lengkap: cleanNama,
+          kategori: finalKategori,
           jenis_kelamin: genderVal,
           tanggal_lahir: formattedDate,
-          alamat_lengkap: String(rawAlamat).trim(),
+          alamat_lengkap: finalAlamat,
           no_telepon: rawTelepon ? String(rawTelepon).trim() : null,
           nama_wali: rawWali ? String(rawWali).trim() : null,
           orang_tua_asuh: rawAsuh ? String(rawAsuh).trim() : null,
