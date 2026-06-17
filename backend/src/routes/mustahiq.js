@@ -797,9 +797,9 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
       const rawKategori = rowData['Kategori'] || 'DHUAFA';
       const rawGender = rowData['Jenis Kelamin (L/P)'] || rowData['Jenis Kelamin'] || rowData['Gender'] || '';
       const rawTanggalLahir = rowData['Tanggal Lahir (YYYY-MM-DD)'] || rowData['Tanggal Lahir'] || '';
-      const rawAlamat = rowData['Alamat Lengkap'] || rowData['Alamat'] || '';
-      const rawTelepon = rowData['No Telepon'] || rowData['No. Telp'] || '';
-      const rawWali = rowData['Nama Wali / Kerabat'] || rowData['Nama Wali'] || '';
+      const rawAlamat = rowData['Alamat Lengkap'] || rowData['Alamat'] || rowData['Alamat Rumah'] || '';
+      const rawTelepon = rowData['No Telepon'] || rowData['No. Telp'] || rowData['Telepon'] || rowData['WhatsApp'] || '';
+      const rawWali = rowData['Nama Wali / Kerabat'] || rowData['Nama Wali'] || rowData['Wali'] || '';
       const rawAsuh = rowData['Orang Tua Asuh'] || '';
       const rawStatus = rowData['Status (AKTIF/SURVEY/TIDAK_AKTIF)'] || rowData['Status'] || 'SURVEY';
       const rawCatatan = rowData['Catatan'] || '';
@@ -809,7 +809,9 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
         return;
       }
 
-      if (rawNama && rawAlamat) {
+      // --- HARDENING: BE MORE LENIENT WITH REQUIRED FIELDS ---
+      // Previously required rawAlamat, but let's allow empty address as long as Nama exists
+      if (rawNama && String(rawNama).trim() !== '') {
         let formattedDate = null;
         if (rawTanggalLahir) {
           if (rawTanggalLahir instanceof Date) {
