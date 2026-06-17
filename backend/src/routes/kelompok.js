@@ -4,6 +4,9 @@ const prisma = require('../prisma');
 const PdfGenerator = require('../services/pdfGenerator');
 
 const getTenantId = (req) => {
+  if (req.user && req.user.tenant_id) {
+    return req.user.tenant_id;
+  }
   return req.headers['x-tenant-id'] || req.query.tenant_id;
 };
 
