@@ -27,9 +27,90 @@ const upload = multer({
   limits: { fileSize: 2 * 1024 * 1024 } // limit 2MB
 });
 
+const dns = require('dns').promises;
+
+// VPS platform IP — domain kustom harus mengarah ke sini
+const PLATFORM_IP = process.env.PLATFORM_IP || '103.129.148.127';
+
 const getTenantId = (req) => {
   return req.headers['x-tenant-id'] || req.query.tenant_id;
 };
+
+// GET /api/v1/tenant/check-domain?domain=xxx
+// Public endpoint: cek apakah DNS custom domain sudah mengarah ke IP platform
+router.get('/check-domain', async (req, res) => {
+  try {
+    const { domain } = req.query;
+    if (!domain) {
+      return res.status(400).json({ success: false, error: 'Parameter domain wajib diisi.' });
+    }
+
+    const domainClean = domain.trim().toLowerCase();
+    const domainRegex = /^[a-z0-9][a-z0-9.-]+\.[a-z]{2,}$/;
+    if (!domainRegex.test(domainClean)) {
+      return res.status(400).json({
+        success: false,
+        status: 'invalid',
+        message: 'Format domain tidak valid. Contoh: zakat.lembaga-anda.org'
+      });
+    }
+
+    let resolvedIps = [];
+    let dnsMethod = null;
+
+    // Coba resolve A record langsung
+    try {
+      resolvedIps = await dns.resolve4(domainClean);
+      dnsMethod = 'A';
+    } catch (_) {}
+
+    // Jika tidak ada A record, coba resolve CNAME dulu lalu A record
+    if (resolvedIps.length === 0) {
+      try {
+        const cnames = await dns.resolveCname(domainClean);
+        if (cnames.length > 0) {
+          dnsMethod = 'CNAME';
+          try {
+            resolvedIps = await dns.resolve4(cnames[0]);
+          } catch (_) {}
+        }
+      } catch (_) {}
+    }
+
+    // Tidak ada DNS record sama sekali
+    if (resolvedIps.length === 0) {
+      return res.json({
+        success: true,
+        status: 'not_found',
+        verified: false,
+        domain: domainClean,
+        resolved_ips: [],
+        platform_ip: PLATFORM_IP,
+        message: `Domain "${domainClean}" tidak ditemukan. Pastikan Anda sudah membuat A Record atau CNAME di DNS manager domain Anda.`
+      });
+    }
+
+    // Cek apakah salah satu IP-nya mengarah ke IP platform
+    const isPointingToUs = resolvedIps.includes(PLATFORM_IP);
+
+    return res.json({
+      success: true,
+      status: isPointingToUs ? 'verified' : 'wrong_ip',
+      verified: isPointingToUs,
+      domain: domainClean,
+      resolved_ips: resolvedIps,
+      dns_method: dnsMethod,
+      platform_ip: PLATFORM_IP,
+      message: isPointingToUs
+        ? `✅ Domain "${domainClean}" sudah mengarah ke server platform (${PLATFORM_IP}). Siap diaktifkan!`
+        : `❌ Domain "${domainClean}" mengarah ke IP ${resolvedIps.join(', ')}, bukan ke server platform (${PLATFORM_IP}). Perbarui A Record di DNS manager Anda.`
+    });
+
+  } catch (err) {
+    console.error('[Check Domain Error]', err);
+    res.status(500).json({ success: false, status: 'error', message: err.message });
+  }
+});
 
 // GET /api/v1/tenant/profile
 router.get('/profile', async (req, res) => {

@@ -32,6 +32,11 @@ export default function Profile() {
   const [uploadingStempel, setUploadingStempel] = useState(false);
   const [customDomain, setCustomDomain] = useState('');
 
+  // Domain verification state
+  const [domainCheckResult, setDomainCheckResult] = useState(null); // null | { status, verified, message, resolved_ips }
+  const [checkingDomain, setCheckingDomain] = useState(false);
+  const [lastCheckedDomain, setLastCheckedDomain] = useState('');
+
   const loadData = async () => {
     setLoading(true);
     try {
@@ -63,7 +68,16 @@ export default function Profile() {
           single_group_restriction: settings.rules.single_group_restriction || false,
         });
       }
-      setCustomDomain(res.data.custom_domain || '');
+      const cd = res.data.custom_domain || '';
+      setCustomDomain(cd);
+      // Jika domain sudah tersimpan di DB, anggap sudah terverifikasi sebelumnya
+      if (cd) {
+        setLastCheckedDomain(cd);
+        setDomainCheckResult({ status: 'verified', verified: true, message: `Domain '${cd}' sudah terdaftar dan aktif.` });
+      } else {
+        setLastCheckedDomain('');
+        setDomainCheckResult(null);
+      }
     } catch (e) {
       console.error('Failed to load profile settings:', e);
     } finally {
@@ -74,6 +88,22 @@ export default function Profile() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleCheckDomain = async () => {
+    const domainToCheck = customDomain.trim().toLowerCase();
+    if (!domainToCheck) return;
+    setCheckingDomain(true);
+    setDomainCheckResult(null);
+    try {
+      const res = await ApiService.checkDomain(domainToCheck);
+      setDomainCheckResult(res);
+      setLastCheckedDomain(domainToCheck);
+    } catch (err) {
+      setDomainCheckResult({ status: 'error', verified: false, message: `Gagal melakukan pengecekan: ${err.message}` });
+    } finally {
+      setCheckingDomain(false);
+    }
+  };
 
   const handleLogoUpload = async (e) => {
     const file = e.target.files[0];
@@ -111,6 +141,16 @@ export default function Profile() {
 
   const handleSave = async (e) => {
     e.preventDefault();
+
+    // Blokir simpan jika custom domain diisi tapi belum terverifikasi
+    const domainChanged = customDomain.trim().toLowerCase() !== (tenant?.custom_domain || '').trim().toLowerCase();
+    if (customDomain.trim() && domainChanged) {
+      if (!domainCheckResult || !domainCheckResult.verified || lastCheckedDomain !== customDomain.trim().toLowerCase()) {
+        alert('Harap lakukan verifikasi DNS domain kustom terlebih dahulu sebelum menyimpan.');
+        return;
+      }
+    }
+
     setSaving(true);
     try {
       const settingsPayload = {
@@ -457,22 +497,114 @@ export default function Profile() {
                   fontSize: '13px',
                   fontWeight: '500'
                 }}>
-                  {tenant?.domain_or_slug ? `${tenant.domain_or_slug}.mustahiq.care` : '-'}
+                  {tenant?.domain_or_slug ? `${tenant.domain_or_slug}.absenta.id` : '-'}
                 </div>
               </div>
 
               <div style={styles.inputGroup}>
                 <label style={styles.label}>Domain Kustom (Custom Domain)</label>
-                <input
-                  type="text"
-                  className="input"
-                  placeholder="Contoh: zakat.lembaga-anda.org"
-                  value={customDomain}
-                  onChange={(e) => setCustomDomain(e.target.value)}
-                />
-                <span style={{ ...styles.hintText, color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
-                  * Pastikan Anda sudah mengarahkan DNS CNAME / A Record domain tersebut ke alamat IP server ini sebelum menyimpannya.
-                </span>
+                
+                {/* Input + Tombol Cek */}
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="text"
+                    className="input"
+                    style={{ flex: 1 }}
+                    placeholder="Contoh: zakat.lembaga-anda.org"
+                    value={customDomain}
+                    onChange={(e) => {
+                      setCustomDomain(e.target.value);
+                      // Reset verifikasi jika domain diubah
+                      if (e.target.value.trim().toLowerCase() !== lastCheckedDomain) {
+                        setDomainCheckResult(null);
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    style={{ whiteSpace: 'nowrap', minWidth: '110px', fontSize: '12px' }}
+                    onClick={handleCheckDomain}
+                    disabled={!customDomain.trim() || checkingDomain}
+                  >
+                    {checkingDomain ? '⏳ Mengecek...' : '🔍 Cek DNS'}
+                  </button>
+                </div>
+
+                {/* Hasil Pengecekan DNS */}
+                {domainCheckResult && (
+                  <div style={{
+                    marginTop: '8px',
+                    padding: '10px 14px',
+                    borderRadius: '8px',
+                    fontSize: '12.5px',
+                    lineHeight: '1.6',
+                    border: '1px solid',
+                    ...(domainCheckResult.status === 'verified' ? {
+                      backgroundColor: 'hsl(142 76% 97%)',
+                      borderColor: 'hsl(142 76% 36%)',
+                      color: 'hsl(142 76% 25%)'
+                    } : domainCheckResult.status === 'wrong_ip' ? {
+                      backgroundColor: 'hsl(38 92% 97%)',
+                      borderColor: 'hsl(38 92% 50%)',
+                      color: 'hsl(38 60% 25%)'
+                    } : {
+                      backgroundColor: 'hsl(0 84% 97%)',
+                      borderColor: 'hsl(0 84% 60%)',
+                      color: 'hsl(0 84% 30%)'
+                    })
+                  }}>
+                    <div style={{ fontWeight: '700', marginBottom: '4px' }}>
+                      {domainCheckResult.status === 'verified' && '✅ DNS Terverifikasi'}
+                      {domainCheckResult.status === 'wrong_ip' && '⚠️ DNS Salah Tujuan'}
+                      {domainCheckResult.status === 'not_found' && '❌ DNS Tidak Ditemukan'}
+                      {domainCheckResult.status === 'invalid' && '❌ Format Domain Tidak Valid'}
+                      {domainCheckResult.status === 'error' && '❌ Gagal Cek DNS'}
+                    </div>
+                    <div>{domainCheckResult.message}</div>
+                    {domainCheckResult.resolved_ips && domainCheckResult.resolved_ips.length > 0 && (
+                      <div style={{ marginTop: '4px', opacity: 0.8 }}>
+                        IP terdeteksi: <strong>{domainCheckResult.resolved_ips.join(', ')}</strong>
+                        {' '}| Target platform: <strong>{domainCheckResult.platform_ip}</strong>
+                        {domainCheckResult.dns_method && ` (via ${domainCheckResult.dns_method} record)`}
+                      </div>
+                    )}
+                    {domainCheckResult.status === 'wrong_ip' && (
+                      <div style={{ marginTop: '6px', fontStyle: 'italic', fontSize: '11.5px' }}>
+                        💡 Perbarui A Record domain Anda ke: <strong>{domainCheckResult.platform_ip}</strong>
+                        . Propagasi DNS biasanya memakan waktu 5–60 menit.
+                      </div>
+                    )}
+                    {domainCheckResult.status === 'not_found' && (
+                      <div style={{ marginTop: '6px', fontStyle: 'italic', fontSize: '11.5px' }}>
+                        💡 Buat A Record baru: <strong>Nama:</strong> {customDomain.split('.').slice(0, -2).join('.') || '@'}
+                        {' '}<strong>Nilai/IP:</strong> {domainCheckResult.platform_ip || '103.129.148.127'}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Panduan setup DNS */}
+                {!domainCheckResult && (
+                  <span style={{ ...styles.hintText, color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
+                    * Setelah mengisi domain, klik "🔍 Cek DNS" untuk memverifikasi bahwa domain sudah diarahkan ke server platform sebelum menyimpan.
+                  </span>
+                )}
+
+                {/* Tombol hapus custom domain */}
+                {tenant?.custom_domain && (
+                  <button
+                    type="button"
+                    style={{ ...styles.hintText, color: 'hsl(0 84% 50%)', cursor: 'pointer', border: 'none', background: 'none', padding: 0, marginTop: '4px', textAlign: 'left' }}
+                    onClick={() => {
+                      setCustomDomain('');
+                      setDomainCheckResult(null);
+                      setLastCheckedDomain('');
+                    }}
+                  >
+                    🗑 Hapus custom domain saat ini ({tenant.custom_domain})
+                  </button>
+                )}
               </div>
             </div>
           </div>

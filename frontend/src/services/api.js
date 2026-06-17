@@ -378,6 +378,9 @@ class ApiService {
     });
   }
 
+  static async checkDomain(domain) {
+    return this.request(`/v1/tenant/check-domain?domain=${encodeURIComponent(domain)}`);
+  }
   // License Sync
   static async syncLicense() {
     return this.request('/v1/license/sync', {
