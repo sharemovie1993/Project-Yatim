@@ -849,7 +849,16 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
         if (rawNik) {
           const trimmedNik = String(rawNik).trim();
           if (trimmedNik !== '') {
-            parsedNik = trimmedNik;
+            // Hardening: Clean NIK from non-numeric characters (like dots or spaces)
+            parsedNik = trimmedNik.replace(/\D/g, '');
+            
+            // Validate NIK format
+            if (parsedNik.length !== 16) {
+              // Instead of throwing, we just nullify or ignore to prevent 400 Bad Request
+              // But for better UX, we can log it
+              console.warn(`[Import Excel] Invalid NIK format for ${rawNama}: ${parsedNik}`);
+              parsedNik = null; 
+            }
           }
         }
 
