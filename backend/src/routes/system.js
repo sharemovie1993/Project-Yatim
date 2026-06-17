@@ -40,13 +40,21 @@ function getProgress() {
 // Includes node_modules/.bin in PATH so local binaries (vite, prisma, etc.) can be found
 const execPromise = (cmd, cwd) => {
   return new Promise((resolve, reject) => {
+    // Find the correct Path variable name (Windows uses 'Path', others use 'PATH')
+    const pathKey = Object.keys(process.env).find(k => k.toUpperCase() === 'PATH') || 'PATH';
+    
     // Build a PATH that includes node_modules/.bin from the cwd so tools like vite are found
     const localBin = cwd ? path.join(cwd, 'node_modules', '.bin') : '';
+    const originalPath = process.env[pathKey] || '';
     const envPath = localBin
-      ? `${localBin}${path.delimiter}${process.env.PATH || ''}`
-      : (process.env.PATH || '');
+      ? `${localBin}${path.delimiter}${originalPath}`
+      : originalPath;
 
-    exec(cmd, { cwd, timeout: 300000, env: { ...process.env, PATH: envPath } }, (error, stdout, stderr) => {
+    // Create a copy of env and update the correct Path key
+    const newEnv = { ...process.env };
+    newEnv[pathKey] = envPath;
+
+    exec(cmd, { cwd, timeout: 300000, env: newEnv }, (error, stdout, stderr) => {
       if (error) {
         reject({ error, stderr, stdout });
       } else {
