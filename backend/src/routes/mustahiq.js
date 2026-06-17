@@ -4,8 +4,13 @@ const prisma = require('../prisma');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Helper to get tenant ID from request headers or query
+// Helper to get tenant ID from request headers (AUTHENTICATED)
 const getTenantId = (req) => {
+  // Always prioritize the tenant ID from the verified JWT token for security
+  if (req.user && req.user.tenant_id) {
+    return req.user.tenant_id;
+  }
+  // Fallback to header or query only if not authenticated (should not happen with verifyToken middleware)
   return req.headers['x-tenant-id'] || req.query.tenant_id;
 };
 

@@ -3,6 +3,9 @@ const router = express.Router();
 const LicenseVerifier = require('../services/licenseVerifier');
 
 const getTenantId = (req) => {
+  if (req.user && req.user.tenant_id) {
+    return req.user.tenant_id;
+  }
   return req.headers['x-tenant-id'] || req.query.tenant_id;
 };
 
