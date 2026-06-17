@@ -135,9 +135,14 @@ async function executeUpdateInBackground() {
   });
 
   try {
-    // Step 1: Git pull
-    console.log('[Updater] Pulling latest code...');
-    await execPromise('git pull', projectRoot);
+    // Step 1: Git fetch + hard reset to always match remote (avoids "would be overwritten" errors)
+    console.log('[Updater] Fetching latest code from remote...');
+    await execPromise('git fetch origin', projectRoot);
+    // Detect current branch dynamically
+    let branch = 'main';
+    try { branch = (await execPromise('git rev-parse --abbrev-ref HEAD', projectRoot)).trim(); } catch (_) {}
+    console.log(`[Updater] Resetting to origin/${branch}...`);
+    await execPromise(`git reset --hard origin/${branch}`, projectRoot);
 
     // Step 2: Install dependencies
     updateProgress({
