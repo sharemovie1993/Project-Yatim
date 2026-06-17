@@ -31,9 +31,10 @@ export default function Profile() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingStempel, setUploadingStempel] = useState(false);
   const [customDomain, setCustomDomain] = useState('');
+  const [savingDomain, setSavingDomain] = useState(false);
 
   // Domain verification state
-  const [domainCheckResult, setDomainCheckResult] = useState(null); // null | { status, verified, message, resolved_ips }
+  const [domainCheckResult, setDomainCheckResult] = useState(null);
   const [checkingDomain, setCheckingDomain] = useState(false);
   const [lastCheckedDomain, setLastCheckedDomain] = useState('');
 
@@ -141,16 +142,6 @@ export default function Profile() {
 
   const handleSave = async (e) => {
     e.preventDefault();
-
-    // Blokir simpan jika custom domain diisi tapi belum terverifikasi
-    const domainChanged = customDomain.trim().toLowerCase() !== (tenant?.custom_domain || '').trim().toLowerCase();
-    if (customDomain.trim() && domainChanged) {
-      if (!domainCheckResult || !domainCheckResult.verified || lastCheckedDomain !== customDomain.trim().toLowerCase()) {
-        alert('Harap lakukan verifikasi DNS domain kustom terlebih dahulu sebelum menyimpan.');
-        return;
-      }
-    }
-
     setSaving(true);
     try {
       const settingsPayload = {
@@ -174,12 +165,7 @@ export default function Profile() {
         }
       };
 
-      // Save custom domain if modified
-      const currentCustomDomain = tenant?.custom_domain || '';
-      if (customDomain.trim().toLowerCase() !== currentCustomDomain.trim().toLowerCase()) {
-        await ApiService.updateCustomDomain(customDomain.trim() || null);
-      }
-
+      // Simpan profil SAJA — domain kustom diurus oleh handleSaveDomain
       await ApiService.updateTenantProfile(name, settingsPayload);
       alert('Profil sekolah/tenant berhasil disimpan.');
       await loadData();
@@ -187,6 +173,50 @@ export default function Profile() {
       alert('Gagal menyimpan: ' + err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Handler KHUSUS untuk aktivasi custom domain — terpisah dari form profil
+  const handleSaveDomain = async () => {
+    const domainToSave = customDomain.trim().toLowerCase();
+    if (!domainToSave) return;
+
+    // Wajib sudah dicek dan terverifikasi
+    if (!domainCheckResult || !domainCheckResult.verified || lastCheckedDomain !== domainToSave) {
+      alert('Harap klik \'🔍 Cek DNS\' terlebih dahulu dan pastikan hasilnya ✅ terverifikasi sebelum mengaktifkan domain.');
+      return;
+    }
+
+    setSavingDomain(true);
+    try {
+      await ApiService.updateCustomDomain(domainToSave);
+      alert(`Domain kustom '${domainToSave}' berhasil diaktifkan! SSL akan diterbitkan otomatis oleh server.`);
+      await loadData();
+    } catch (err) {
+      alert('Gagal mengaktifkan domain: ' + err.message);
+    } finally {
+      setSavingDomain(false);
+    }
+  };
+
+  // Handler untuk melepas / menghapus custom domain
+  const handleRemoveDomain = async () => {
+    if (!tenant?.custom_domain) return;
+    const confirm = window.confirm(`Yakin ingin melepas domain kustom '${tenant.custom_domain}'? Domain tersebut tidak akan lagi terhubung ke aplikasi ini.`);
+    if (!confirm) return;
+
+    setSavingDomain(true);
+    try {
+      await ApiService.updateCustomDomain(null);
+      setCustomDomain('');
+      setDomainCheckResult(null);
+      setLastCheckedDomain('');
+      alert('Domain kustom berhasil dilepas.');
+      await loadData();
+    } catch (err) {
+      alert('Gagal melepas domain: ' + err.message);
+    } finally {
+      setSavingDomain(false);
     }
   };
 
@@ -591,19 +621,34 @@ export default function Profile() {
                   </span>
                 )}
 
-                {/* Tombol hapus custom domain */}
+                {/* Tombol AKTIFKAN domain — hanya muncul jika DNS sudah verified dan domain berbeda dari yang aktif */}
+                {domainCheckResult?.status === 'verified' && customDomain.trim().toLowerCase() !== (tenant?.custom_domain || '').trim().toLowerCase() && (
+                  <div style={{ marginTop: '10px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-primary"
+                      style={{ width: '100%', fontSize: '13px' }}
+                      onClick={handleSaveDomain}
+                      disabled={savingDomain}
+                    >
+                      {savingDomain ? '⏳ Mengaktifkan...' : '🌐 Aktifkan Domain Kustom'}
+                    </button>
+                  </div>
+                )}
+
+                {/* Tombol LEPAS domain — muncul jika sudah ada domain aktif */}
                 {tenant?.custom_domain && (
-                  <button
-                    type="button"
-                    style={{ ...styles.hintText, color: 'hsl(0 84% 50%)', cursor: 'pointer', border: 'none', background: 'none', padding: 0, marginTop: '4px', textAlign: 'left' }}
-                    onClick={() => {
-                      setCustomDomain('');
-                      setDomainCheckResult(null);
-                      setLastCheckedDomain('');
-                    }}
-                  >
-                    🗑 Hapus custom domain saat ini ({tenant.custom_domain})
-                  </button>
+                  <div style={{ marginTop: '6px' }}>
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      style={{ width: '100%', fontSize: '12px', color: 'hsl(0 84% 50%)', borderColor: 'hsl(0 84% 70%)' }}
+                      onClick={handleRemoveDomain}
+                      disabled={savingDomain}
+                    >
+                      {savingDomain ? '⏳ Memproses...' : `🗑 Lepas Domain Aktif (${tenant.custom_domain})`}
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
