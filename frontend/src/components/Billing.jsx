@@ -295,8 +295,18 @@ export default function Billing() {
       const res = await fetch(`${LICENSE_SERVER_URL}/api/license/history-by-core-key/${coreKey}`);
       const result = await res.json();
       if (result.success) {
-        setHistoryLicenses(result.data.licenses || []);
+        const licenses = result.data.licenses || [];
+        setHistoryLicenses(licenses);
         setHistoryInvoices(result.data.invoices || []);
+
+        // Auto-detect and populate VPN license key from history
+        const activeVpn = licenses.find(l => l.product_id === 'vpn-tunnel' && l.status === 'active');
+        if (activeVpn && activeVpn.license_key) {
+          if (!vpnLicenseKey || vpnLicenseKey !== activeVpn.license_key) {
+            await ApiService.updateTenantProfile(null, { vpn_license_key: activeVpn.license_key });
+            setVpnLicenseKey(activeVpn.license_key);
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to load transaction history:', err);

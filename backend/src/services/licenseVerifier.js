@@ -97,6 +97,20 @@ class LicenseVerifier {
             settings.vpn_license_key = licenseKey.trim();
           }
 
+          // Query history to check if a separate VPN license key was generated
+          try {
+            const historyRes = await fetch(`${LICENSE_SERVER_URL}/api/license/history-by-core-key/${licenseKey.trim()}`);
+            const historyData = await historyRes.json();
+            if (historyData.success && historyData.data?.licenses) {
+              const activeVpn = historyData.data.licenses.find(l => l.product_id === 'vpn-tunnel' && l.status === 'active');
+              if (activeVpn && activeVpn.license_key) {
+                settings.vpn_license_key = activeVpn.license_key;
+              }
+            }
+          } catch (historyErr) {
+            console.warn('[LicenseVerifier] Failed to fetch history during sync:', historyErr.message);
+          }
+
           await prisma.tenant.update({
             where: { id: tenantId },
             data: {
