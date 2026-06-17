@@ -789,7 +789,6 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
         const header = headers[colNumber];
         if (header) {
           let cellVal = cell.value;
-          // Clean cell value
           if (cellVal && typeof cellVal === 'object') {
             if (cellVal.richText) {
               cellVal = cellVal.richText.map(t => t.text).join('');
@@ -803,26 +802,30 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
         }
       });
 
-      const rawNik = rowData['NIK'];
-      const rawNama = rowData['Nama Lengkap'] || rowData['Nama'] || '';
-      const rawKategori = rowData['Kategori'] || rowData['Kategori *'] || 'DHUAFA';
-      const rawGender = rowData['Jenis Kelamin (L/P)'] || rowData['Jenis Kelamin'] || rowData['Gender'] || '';
-      const rawTanggalLahir = rowData['Tanggal Lahir (YYYY-MM-DD)'] || rowData['Tanggal Lahir'] || '';
-      const rawAlamat = rowData['Alamat Lengkap'] || rowData['Alamat'] || rowData['Alamat Rumah'] || '';
-      const rawTelepon = rowData['No Telepon'] || rowData['No. Telp'] || rowData['Telepon'] || rowData['WhatsApp'] || '';
-      const rawWali = rowData['Nama Wali / Kerabat'] || rowData['Nama Wali'] || rowData['Wali'] || '';
-      const rawAsuh = rowData['Orang Tua Asuh'] || '';
-      const rawStatus = rowData['Status (AKTIF/SURVEY/TIDAK_AKTIF)'] || rowData['Status'] || 'SURVEY';
-      const rawCatatan = rowData['Catatan'] || '';
+      // --- ULTRA ROBUST VALUE PICKER ---
+      const getVal = (keywords) => {
+        const key = Object.keys(rowData).find(k => 
+          keywords.some(kw => String(k).toLowerCase().includes(kw.toLowerCase()))
+        );
+        return key ? rowData[key] : '';
+      };
 
-      // Skip example rows in our template
-      if (rawNama === 'Budi Santoso' || rawNama === 'Aisyah Putri') {
+      const rawNik = getVal(['NIK']);
+      const rawNama = getVal(['Nama Lengkap', 'Nama']);
+      const rawKategori = getVal(['Kategori']) || 'DHUAFA';
+      const rawGender = getVal(['Jenis Kelamin', 'Gender', 'Kelamin', 'Sex']);
+      const rawTanggalLahir = getVal(['Tanggal Lahir', 'Lahir', 'Birth']);
+      const rawAlamat = getVal(['Alamat Lengkap', 'Alamat', 'Tempat Tinggal', 'Domisili']);
+      const rawTelepon = getVal(['No Telepon', 'Telepon', 'HP', 'WA', 'WhatsApp']);
+      const rawWali = getVal(['Wali', 'Kerabat', 'Orang Tua']);
+      const rawAsuh = getVal(['Orang Tua Asuh', 'Asuh', 'Donatur']);
+      const rawStatus = getVal(['Status']) || 'SURVEY';
+      const rawCatatan = getVal(['Catatan', 'Keterangan', 'Info']);
+
+      // Skip empty or template rows
+      if (!rawNama || String(rawNama).trim() === '' || rawNama === 'Budi Santoso' || rawNama === 'Aisyah Putri') {
         return;
       }
-
-      // --- HARDENING: BE MORE LENIENT WITH REQUIRED FIELDS ---
-      // Previously required rawAlamat, but let's allow empty address as long as Nama exists
-      if (rawNama && String(rawNama).trim() !== '') {
         let formattedDate = null;
         if (rawTanggalLahir) {
           if (rawTanggalLahir instanceof Date) {
