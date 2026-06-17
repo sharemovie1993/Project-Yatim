@@ -13,6 +13,8 @@ export default function Update() {
   const pollingRef = useRef(null);
   const countdownRef = useRef(null);
 
+  const [restarting, setRestarting] = useState(false);
+
   // Load and check updates on mount
   useEffect(() => {
     checkUpdates();
@@ -123,6 +125,28 @@ export default function Update() {
     } catch (err) {
       setUpdating(false);
       setErrorDetails(err.message || 'Kesalahan koneksi ke server backend.');
+    }
+  };
+
+  const handleManualRestart = async () => {
+    const confirmRestart = window.confirm(
+      'Apakah Anda yakin ingin merestart layanan aplikasi?\n\n' +
+      'Gunakan fitur ini jika aplikasi terasa berat atau setelah melakukan perubahan manual di server. Koneksi akan terputus selama beberapa detik.'
+    );
+    if (!confirmRestart) return;
+
+    setRestarting(true);
+    try {
+      const res = await ApiService.restartService();
+      if (res.success) {
+        startReloadCountdown();
+      } else {
+        alert(res.error || 'Gagal merestart layanan.');
+        setRestarting(false);
+      }
+    } catch (err) {
+      alert('Kesalahan koneksi: ' + err.message);
+      setRestarting(false);
     }
   };
 
@@ -294,28 +318,57 @@ export default function Update() {
         </div>
 
         {/* PANEL KANAN: RIWAYAT COMMIT TERBARU / CHANGE LOG */}
-        <div className="card" style={styles.panelRight}>
-          <h3 style={styles.panelRightTitle}>Daftar Commit GitHub Terbaru</h3>
-          <p style={styles.panelRightDesc}>Histori commit baru yang belum ditarik ke aplikasi server lokal Anda:</p>
-          
-          <div style={styles.commitsList}>
-            {commits.length === 0 ? (
-              <div style={styles.emptyCommits}>
-                <span style={{ fontSize: '32px', display: 'block', marginBottom: '10px' }}>📄</span>
-                Tidak ada commit tertunda (Semua perubahan sudah tersinkronisasi)
-              </div>
-            ) : (
-              commits.map((commit, index) => (
-                <div key={commit.hash || index} style={styles.commitItem}>
-                  <div style={styles.commitBadge}>
-                    {commit.hash ? commit.hash.substring(0, 7) : 'Commit'}
-                  </div>
-                  <div style={styles.commitDetails}>
-                    <div style={styles.commitMsg}>{commit.message}</div>
-                  </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <div className="card" style={styles.panelRight}>
+            <h3 style={styles.panelRightTitle}>Daftar Commit GitHub Terbaru</h3>
+            <p style={styles.panelRightDesc}>Histori commit baru yang belum ditarik ke aplikasi server lokal Anda:</p>
+            
+            <div style={styles.commitsList}>
+              {commits.length === 0 ? (
+                <div style={styles.emptyCommits}>
+                  <span style={{ fontSize: '32px', display: 'block', marginBottom: '10px' }}>📄</span>
+                  Tidak ada commit tertunda (Semua perubahan sudah tersinkronisasi)
                 </div>
-              ))
-            )}
+              ) : (
+                commits.map((commit, index) => (
+                  <div key={commit.hash || index} style={styles.commitItem}>
+                    <div style={styles.commitBadge}>
+                      {commit.hash ? commit.hash.substring(0, 7) : 'Commit'}
+                    </div>
+                    <div style={styles.commitDetails}>
+                      <div style={styles.commitMsg}>{commit.message}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="card" style={{ ...styles.panelRight, maxHeight: 'auto' }}>
+            <h3 style={styles.panelRightTitle}>🔧 Peralatan Sistem</h3>
+            <p style={styles.panelRightDesc}>Aksi darurat untuk pemeliharaan server lokal.</p>
+            
+            <div style={{ marginTop: '10px' }}>
+              <button 
+                className="btn btn-outline" 
+                style={{ 
+                  width: '100%', 
+                  padding: '12px', 
+                  color: '#ef4444', 
+                  borderColor: 'rgba(239, 68, 68, 0.3)',
+                  backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                  fontSize: '13px',
+                  fontWeight: '600'
+                }} 
+                onClick={handleManualRestart}
+                disabled={restarting || updating}
+              >
+                {restarting ? '⏳ Merestart...' : '⚡ Paksa Restart Layanan (PM2)'}
+              </button>
+              <p style={{ fontSize: '11px', color: 'hsl(var(--muted-foreground))', marginTop: '10px', textAlign: 'center' }}>
+                *Gunakan tombol ini jika aplikasi tidak merespon setelah update atau untuk memuat ulang konfigurasi server.
+              </p>
+            </div>
           </div>
         </div>
       </div>

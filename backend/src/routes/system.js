@@ -135,6 +135,29 @@ router.post('/update/execute', verifyToken, requireAdmin, async (req, res) => {
   });
 });
 
+// 4. POST /api/v1/system/restart
+router.post('/restart', verifyToken, requireAdmin, async (req, res) => {
+  res.json({
+    success: true,
+    message: 'Perintah restart layanan telah dikirim. Aplikasi akan memuat ulang dalam beberapa saat.'
+  });
+
+  console.log('[System] Manual restart triggered by admin. Executing pm2 restart all...');
+  
+  setTimeout(() => {
+    exec('pm2 restart all', (pm2Err) => {
+      if (pm2Err) {
+        console.warn('[System] pm2 restart all failed:', pm2Err.message);
+        exec('pm2 restart /mustahiq/', (pm2Err2) => {
+          if (pm2Err2) {
+            console.error('[System] Manual restart failed:', pm2Err2.message);
+          }
+        });
+      }
+    });
+  }, 1000);
+});
+
 async function executeUpdateInBackground() {
   updateProgress({
     status: 'running',

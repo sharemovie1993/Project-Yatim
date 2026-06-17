@@ -460,6 +460,12 @@ class ApiService {
     });
   }
 
+  static async restartService() {
+    return this.request('/v1/system/restart', {
+      method: 'POST'
+    });
+  }
+
   // File Upload
   static async uploadProfileImage(file) {
     const token = this.getToken();
