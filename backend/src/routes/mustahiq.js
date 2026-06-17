@@ -903,7 +903,6 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
           status: statusVal,
           catatan: rawCatatan ? String(rawCatatan).trim() : null
         });
-      }
     });
 
     if (payloads.length === 0) {
