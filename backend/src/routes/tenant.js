@@ -146,4 +146,137 @@ router.post('/profile/upload', upload.single('file'), (req, res) => {
   }
 });
 
+// GET /api/v1/tenant/resolve
+// Public endpoint: resolves tenant details based on active hostname
+router.get('/resolve', async (req, res) => {
+  try {
+    const { hostname } = req.query;
+    if (!hostname) {
+      return res.status(400).json({ success: false, error: 'Hostname query parameter is required.' });
+    }
+
+    const hostClean = hostname.trim().toLowerCase();
+
+    // Query by custom domain first, fallback to domain_or_slug
+    const tenant = await prisma.tenant.findFirst({
+      where: {
+        OR: [
+          { custom_domain: hostClean },
+          { domain_or_slug: hostClean }
+        ]
+      }
+    });
+
+    if (!tenant) {
+      return res.status(404).json({ success: false, error: 'Tenant not found for the specified domain.' });
+    }
+
+    let parsedSettings = {};
+    try {
+      parsedSettings = JSON.parse(tenant.settings || '{}');
+    } catch (e) {
+      parsedSettings = {};
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: tenant.id,
+        name: tenant.name,
+        domain_or_slug: tenant.domain_or_slug,
+        custom_domain: tenant.custom_domain,
+        settings: parsedSettings
+      }
+    });
+  } catch (error) {
+    console.error('[GET Tenant Resolve Error]', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// GET /api/v1/tenant/validate-domain
+// Public endpoint: Caddy dynamically queries this to verify if it should generate SSL for a custom domain.
+// Returns HTTP 200 if yes, HTTP 404/400 if no.
+router.get('/validate-domain', async (req, res) => {
+  try {
+    const domain = req.query.domain;
+    if (!domain) {
+      return res.status(400).send('Domain parameter is required');
+    }
+
+    const domainClean = domain.trim().toLowerCase();
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { custom_domain: domainClean }
+    });
+
+    if (tenant && tenant.is_active) {
+      return res.status(200).send('OK');
+    } else {
+      return res.status(404).send('Domain not allowed or inactive');
+    }
+  } catch (error) {
+    console.error('[GET Tenant Validate Domain Error]', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+// PUT /api/v1/tenant/profile/custom-domain
+// Authenticated endpoint: allows a tenant administrator to set or remove their custom domain
+router.put('/profile/custom-domain', async (req, res) => {
+  try {
+    const tenantId = getTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, error: 'Tenant ID is required.' });
+    }
+
+    const { custom_domain } = req.body;
+    let targetDomain = null;
+
+    if (custom_domain) {
+      targetDomain = custom_domain.trim().toLowerCase();
+      
+      // Enforce valid domain format regex (e.g. zakat.lembaga-a.org)
+      const domainRegex = /^[a-z0-9.-]+\.[a-z]{2,}$/;
+      if (!domainRegex.test(targetDomain)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Format domain kustom tidak valid. Contoh format: zakat.lembaga-anda.org'
+        });
+      }
+
+      // Ensure domain is not already registered by another tenant
+      const duplicateTenant = await prisma.tenant.findFirst({
+        where: {
+          custom_domain: targetDomain,
+          NOT: { id: tenantId }
+        }
+      });
+
+      if (duplicateTenant) {
+        return res.status(400).json({
+          success: false,
+          error: 'Domain kustom ini sudah digunakan oleh lembaga lain.'
+        });
+      }
+    }
+
+    const updated = await prisma.tenant.update({
+      where: { id: tenantId },
+      data: { custom_domain: targetDomain }
+    });
+
+    res.json({
+      success: true,
+      message: targetDomain 
+        ? `Domain kustom berhasil dihubungkan ke: ${targetDomain}` 
+        : 'Domain kustom berhasil dilepas.',
+      custom_domain: updated.custom_domain
+    });
+  } catch (error) {
+    console.error('[PUT Tenant Custom Domain Error]', error);
+    res.status(400).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;

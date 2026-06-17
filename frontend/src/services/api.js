@@ -365,6 +365,17 @@ class ApiService {
     });
   }
 
+  static async resolveTenant(hostname) {
+    return this.request(`/v1/tenant/resolve?hostname=${encodeURIComponent(hostname)}`);
+  }
+
+  static async updateCustomDomain(customDomain) {
+    return this.request('/v1/tenant/profile/custom-domain', {
+      method: 'PUT',
+      body: JSON.stringify({ custom_domain: customDomain }),
+    });
+  }
+
   // License Sync
   static async syncLicense() {
     return this.request('/v1/license/sync', {
