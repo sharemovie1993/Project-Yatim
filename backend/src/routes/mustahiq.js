@@ -849,17 +849,18 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
         if (rawNik) {
           const trimmedNik = String(rawNik).trim();
           if (trimmedNik !== '') {
-            // Hardening: Clean NIK from non-numeric characters (like dots or spaces)
             parsedNik = trimmedNik.replace(/\D/g, '');
-            
-            // Validate NIK format
             if (parsedNik.length !== 16) {
-              // Instead of throwing, we just nullify or ignore to prevent 400 Bad Request
-              // But for better UX, we can log it
-              console.warn(`[Import Excel] Invalid NIK format for ${rawNama}: ${parsedNik}`);
               parsedNik = null; 
             }
           }
+        }
+
+        // --- HARDENING: GENERATE TEMPORARY NIK IF NULL ---
+        // Since NIK is mandatory in database but might be invalid in Excel,
+        // we generate a unique temporary NIK to prevent Prisma crash
+        if (!parsedNik) {
+          parsedNik = `TEMP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
         }
 
         // --- HARDENING: PREVENT DUPLICATE NIK PER TENANT ---
