@@ -148,7 +148,7 @@ async function executeUpdateInBackground() {
       message: 'Menyinkronkan skema database SQLite (Prisma db push)...'
     });
     console.log('[Updater] Migrating database...');
-    await execPromise('npx prisma db push', path.join(projectRoot, 'backend'));
+    await execPromise('npx prisma db push --accept-data-loss', path.join(projectRoot, 'backend'));
 
     // Step 4: Recompile frontend bundle
     updateProgress({
