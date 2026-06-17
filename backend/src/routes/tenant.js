@@ -69,6 +69,7 @@ router.get('/profile', async (req, res) => {
         id: tenant.id,
         name: tenant.name,
         domain_or_slug: tenant.domain_or_slug,
+        custom_domain: tenant.custom_domain,
         license_key: tenant.license_key,
         is_active: tenant.is_active,
         settings,
