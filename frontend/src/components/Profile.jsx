@@ -30,6 +30,7 @@ export default function Profile() {
 
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingStempel, setUploadingStempel] = useState(false);
+  const [customDomain, setCustomDomain] = useState('');
 
   const loadData = async () => {
     setLoading(true);
@@ -62,6 +63,7 @@ export default function Profile() {
           single_group_restriction: settings.rules.single_group_restriction || false,
         });
       }
+      setCustomDomain(res.data.custom_domain || '');
     } catch (e) {
       console.error('Failed to load profile settings:', e);
     } finally {
@@ -131,6 +133,12 @@ export default function Profile() {
           max_mustahiq: tenant?.settings?.rules?.max_mustahiq || 100
         }
       };
+
+      // Save custom domain if modified
+      const currentCustomDomain = tenant?.custom_domain || '';
+      if (customDomain.trim().toLowerCase() !== currentCustomDomain.trim().toLowerCase()) {
+        await ApiService.updateCustomDomain(customDomain.trim() || null);
+      }
 
       await ApiService.updateTenantProfile(name, settingsPayload);
       alert('Profil sekolah/tenant berhasil disimpan.');
@@ -435,6 +443,36 @@ export default function Profile() {
                   <option value="multiple">Bebas (Satu mustahiq bisa bergabung ke banyak kelompok)</option>
                   <option value="single">Terbatas (Satu mustahiq hanya boleh bergabung ke 1 kelompok saja)</option>
                 </select>
+              </div>
+
+              <h3 style={{ ...styles.sectionTitle, marginTop: '24px' }}>🌐 Domain & Akses Web</h3>
+              
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Domain Bawaan Platform (Read-only)</label>
+                <div style={{
+                  padding: '10px 14px',
+                  borderRadius: '6px',
+                  backgroundColor: 'hsl(var(--muted))',
+                  color: 'hsl(var(--muted-foreground))',
+                  fontSize: '13px',
+                  fontWeight: '500'
+                }}>
+                  {tenant?.domain_or_slug ? `${tenant.domain_or_slug}.mustahiq.care` : '-'}
+                </div>
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Domain Kustom (Custom Domain)</label>
+                <input
+                  type="text"
+                  className="input"
+                  placeholder="Contoh: zakat.lembaga-anda.org"
+                  value={customDomain}
+                  onChange={(e) => setCustomDomain(e.target.value)}
+                />
+                <span style={{ ...styles.hintText, color: 'hsl(var(--muted-foreground))', marginTop: '2px' }}>
+                  * Pastikan Anda sudah mengarahkan DNS CNAME / A Record domain tersebut ke alamat IP server ini sebelum menyimpannya.
+                </span>
               </div>
             </div>
           </div>
