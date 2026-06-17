@@ -157,13 +157,17 @@ router.get('/resolve', async (req, res) => {
     }
 
     const hostClean = hostname.trim().toLowerCase();
+    // If using the default subdomain, extract the slug prefix for matching
+    const slugOrDomain = hostClean.endsWith('.absenta.id') 
+      ? hostClean.replace('.absenta.id', '') 
+      : hostClean;
 
     // Query by custom domain first, fallback to domain_or_slug
     const tenant = await prisma.tenant.findFirst({
       where: {
         OR: [
           { custom_domain: hostClean },
-          { domain_or_slug: hostClean }
+          { domain_or_slug: slugOrDomain }
         ]
       }
     });

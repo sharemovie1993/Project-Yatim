@@ -1,6 +1,8 @@
 const getBaseUrl = () => {
   const { protocol, hostname, origin } = window.location;
-  if (hostname.endsWith('.absenta.id') || hostname === 'absenta.id') {
+  // Use same origin in production (public domains), fallback to port 5002 only on localhost or local IPs
+  const isLocal = hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('10.') || hostname.startsWith('192.168.') || hostname.startsWith('172.');
+  if (!isLocal) {
     return `${origin}/api`;
   }
   const port = import.meta.env.VITE_BACKEND_PORT || '5002';
