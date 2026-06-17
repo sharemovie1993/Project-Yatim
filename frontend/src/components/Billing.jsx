@@ -126,7 +126,9 @@ export default function Billing() {
     status: 'not_configured',
     client_ip: '',
     subdomain: '',
-    tunnel_active: false
+    tunnel_active: false,
+    domain_or_slug: '',
+    custom_domain: ''
   });
   const [loadingTunnel, setLoadingTunnel] = useState(false);
   const [togglingTunnel, setTogglingTunnel] = useState(false);
@@ -1014,24 +1016,55 @@ export default function Billing() {
                   </div>
                   
                   <div style={styles.infoList}>
-                    <div style={styles.infoItem}>
-                      <span>Subdomain Publik</span>
-                      {tunnelStatus.status === 'connected' ? (
-                        <a 
-                          href={`http://${tunnelStatus.subdomain}`} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
-                          style={{ color: 'hsl(var(--primary))', fontWeight: 'bold', textDecoration: 'underline' }}
-                        >
-                          {tunnelStatus.subdomain} ↗
-                        </a>
-                      ) : (
-                        <strong style={{ color: 'hsl(var(--muted-foreground))' }}>{tunnelStatus.subdomain} (Offline)</strong>
-                      )}
-                    </div>
+                    {/* Skenario 1: Lokal saja — tidak ada subdomain & tidak ada custom domain */}
+                    {!tunnelStatus.subdomain && !tunnelStatus.custom_domain && (
+                      <div style={styles.infoItem}>
+                        <span>Akses</span>
+                        <strong style={{ color: 'hsl(var(--muted-foreground))' }}>Lokal saja</strong>
+                      </div>
+                    )}
+
+                    {/* Skenario 2 & 3: Ada subdomain platform */}
+                    {tunnelStatus.subdomain && (
+                      <div style={styles.infoItem}>
+                        <span>Subdomain Platform</span>
+                        {tunnelStatus.status === 'connected' ? (
+                          <a 
+                            href={`https://${tunnelStatus.subdomain}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            style={{ color: 'hsl(var(--primary))', fontWeight: 'bold', textDecoration: 'underline' }}
+                          >
+                            {tunnelStatus.subdomain} ↗
+                          </a>
+                        ) : (
+                          <strong style={{ color: 'hsl(var(--muted-foreground))' }}>{tunnelStatus.subdomain} (Offline)</strong>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Skenario 3: Ada custom domain tambahan */}
+                    {tunnelStatus.custom_domain && (
+                      <div style={styles.infoItem}>
+                        <span>Domain Kustom</span>
+                        {tunnelStatus.status === 'connected' ? (
+                          <a 
+                            href={`https://${tunnelStatus.custom_domain}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            style={{ color: 'hsl(var(--accent, var(--primary)))', fontWeight: 'bold', textDecoration: 'underline' }}
+                          >
+                            {tunnelStatus.custom_domain} ↗
+                          </a>
+                        ) : (
+                          <strong style={{ color: 'hsl(var(--muted-foreground))' }}>{tunnelStatus.custom_domain} (Offline)</strong>
+                        )}
+                      </div>
+                    )}
+
                     <div style={styles.infoItem}>
                       <span>IP WireGuard</span>
-                      <strong>{tunnelStatus.client_ip}</strong>
+                      <strong>{tunnelStatus.client_ip || '-'}</strong>
                     </div>
                   </div>
                 </div>

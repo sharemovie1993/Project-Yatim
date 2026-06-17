@@ -69,7 +69,10 @@ router.get('/tunnel/status', verifyToken, requireAdmin, async (req, res) => {
         status: wgStatus.status, // connected | disconnected | installed | not_configured
         client_ip: wgStatus.ip || '',
         subdomain: settings.tunnel_subdomain || '',
-        tunnel_active: wgStatus.status === 'connected'
+        tunnel_active: wgStatus.status === 'connected',
+        // Domain info for dynamic access scenario display
+        domain_or_slug: tenant.domain_or_slug || '',
+        custom_domain: tenant.custom_domain || ''
       }
     });
   } catch (error) {

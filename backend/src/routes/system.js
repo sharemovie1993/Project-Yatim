@@ -37,9 +37,16 @@ function getProgress() {
 }
 
 // Helper to run shell commands as promises
+// Includes node_modules/.bin in PATH so local binaries (vite, prisma, etc.) can be found
 const execPromise = (cmd, cwd) => {
   return new Promise((resolve, reject) => {
-    exec(cmd, { cwd, timeout: 300000 }, (error, stdout, stderr) => {
+    // Build a PATH that includes node_modules/.bin from the cwd so tools like vite are found
+    const localBin = cwd ? path.join(cwd, 'node_modules', '.bin') : '';
+    const envPath = localBin
+      ? `${localBin}${path.delimiter}${process.env.PATH || ''}`
+      : (process.env.PATH || '');
+
+    exec(cmd, { cwd, timeout: 300000, env: { ...process.env, PATH: envPath } }, (error, stdout, stderr) => {
       if (error) {
         reject({ error, stderr, stdout });
       } else {
@@ -165,14 +172,20 @@ async function executeUpdateInBackground() {
       step: 'done',
       message: 'Aplikasi berhasil diperbarui! Memuat ulang layanan...'
     });
-    console.log('[Updater] Update completed successfully. Reloading backend and frontend PM2 services...');
+    console.log('[Updater] Update completed successfully. Reloading PM2 services...');
 
     setTimeout(() => {
-      // Execute PM2 restart
-      exec('pm2 restart mustahiq-backend mustahiq-frontend', (pm2Err) => {
+      // Use pm2 restart all as primary strategy since process names include dynamic port numbers
+      // e.g. 'mustahiq-backend:5002', 'mustahiq-frontend:5174'
+      exec('pm2 restart all', (pm2Err) => {
         if (pm2Err) {
-          console.warn('[Updater] PM2 restart failed, attempting pm2 restart all...');
-          exec('pm2 restart all');
+          console.warn('[Updater] pm2 restart all failed:', pm2Err.message);
+          // Fallback: try to restart using pattern match
+          exec('pm2 restart /mustahiq/', (pm2Err2) => {
+            if (pm2Err2) {
+              console.warn('[Updater] pm2 pattern restart also failed:', pm2Err2.message);
+            }
+          });
         }
       });
     }, 2000);
