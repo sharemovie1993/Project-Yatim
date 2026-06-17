@@ -402,143 +402,34 @@ router.get('/template', async (req, res) => {
   try {
     const ExcelJS = require('exceljs');
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Template Impor Mustahiq');
+    
+    // SHEET 1: DATA (CLEAN)
+    const worksheet = workbook.addWorksheet('DATA_MUSTAHIQ');
+    const headers = [
+      'NIK', 'NAMA_LENGKAP', 'KATEGORI', 'JENIS_KELAMIN', 'TANGGAL_LAHIR', 
+      'ALAMAT', 'TELEPON', 'WALI', 'ASUH', 'STATUS', 'CATATAN'
+    ];
+    
+    const headerRow = worksheet.addRow(headers);
+    headerRow.font = { bold: true };
+    worksheet.getColumn(1).numFmt = '@'; // NIK as text
+    worksheet.getColumn(7).numFmt = '@'; // Telp as text
 
-    // Title Block
-    worksheet.mergeCells('A1:K1');
-    const titleCell = worksheet.getCell('A1');
-    titleCell.value = 'TEMPLATE IMPORT DATA MUSTAHIQ - PORTAL MUSTAHIQ CARE';
-    titleCell.font = { name: 'Segoe UI', bold: true, size: 14, color: { argb: 'FF065F46' } }; // Dark green
-    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } }; // Light emerald
-    titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
-    worksheet.getRow(1).height = 40;
-
-    // Instructions Block
-    worksheet.mergeCells('A2:K2');
-    const instrCell = worksheet.getCell('A2');
-    instrCell.value = 'PETUNJUK PENGISIAN: 1. Jangan mengubah susunan atau nama kolom di baris 4. | 2. Kolom dengan tanda (*) wajib diisi. | 3. NIK harus 16 digit (tulis sebagai teks agar tidak berubah). | 4. Jenis Kelamin diisi L (Laki-laki) atau P (Perempuan). | 5. Status diisi: AKTIF, SURVEY, atau TIDAK_AKTIF.';
-    instrCell.font = { name: 'Segoe UI', italic: true, size: 9, color: { argb: 'FF92400E' } }; // Brownish orange
-    instrCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF3CD' } }; // Light amber
-    instrCell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    worksheet.getRow(2).height = 30;
-
-    // Row 3 is empty
-    worksheet.getRow(3).height = 15;
-
-    // Header Row (Row 4)
-    const headerRow = worksheet.addRow([
-      'NIK', 
-      'Nama Lengkap *', 
-      'Kategori *', 
-      'Jenis Kelamin (L/P)', 
-      'Tanggal Lahir (YYYY-MM-DD)', 
-      'Alamat Lengkap *', 
-      'No Telepon', 
-      'Nama Wali / Kerabat', 
-      'Orang Tua Asuh', 
-      'Status (AKTIF/SURVEY/TIDAK_AKTIF)', 
-      'Catatan'
-    ]);
-    headerRow.height = 28;
-    headerRow.eachCell((cell) => {
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: 'FF059669' } // Emerald green
-      };
-      cell.font = {
-        name: 'Segoe UI',
-        bold: true,
-        color: { argb: 'FFFFFFFF' },
-        size: 11
-      };
-      cell.alignment = {
-        vertical: 'middle',
-        horizontal: 'center'
-      };
-      cell.border = {
-        top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-        left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-        bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
-        right: { style: 'thin', color: { argb: 'FFD1D5DB' } }
-      };
-    });
-
-    // Formatting NIK (Col 1) and Telepon (Col 7) as Text
-    worksheet.getColumn(1).numFmt = '@';
-    worksheet.getColumn(7).numFmt = '@';
-
-    // Example Row 1 (Row 5)
-    const ex1 = worksheet.addRow([
-      '3201011234567890',
-      'Budi Santoso',
-      'YATIM',
-      'L',
-      '2015-08-17',
-      'Jl. Melati No. 12, RT 02/03',
-      '08123456789',
-      'Siti Aminah',
-      'Yayasan Amal',
-      'SURVEY',
-      'Anak yatim berprestasi'
-    ]);
-    ex1.height = 22;
-
-    // Example Row 2 (Row 6)
-    const ex2 = worksheet.addRow([
-      '3201019876543210',
-      'Aisyah Putri',
-      'MISKIN',
-      'P',
-      '2014-04-12',
-      'Kampung Baru, Desa Cerdas',
-      '08771234567',
-      'Ahmad Yani',
-      '',
-      'AKTIF',
-      'Bantuan bulanan'
-    ]);
-    ex2.height = 22;
-
-    // Apply borders and styling to example rows
-    [ex1, ex2].forEach((row) => {
-      row.eachCell((cell, colNum) => {
-        cell.font = { name: 'Segoe UI', size: 10, italic: true, color: { argb: 'FF6B7280' } };
-        cell.border = {
-          top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-          left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-          bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
-          right: { style: 'thin', color: { argb: 'FFE5E7EB' } }
-        };
-        // Alignments
-        if (colNum === 1 || colNum === 4 || colNum === 5 || colNum === 7 || colNum === 10) {
-          cell.alignment = { vertical: 'middle', horizontal: 'center' };
-        } else {
-          cell.alignment = { vertical: 'middle', horizontal: 'left' };
-        }
-      });
-    });
-
-    // Auto-fit column width
-    worksheet.columns.forEach((column) => {
-      let maxLen = 0;
-      column.eachCell({ includeEmpty: true }, (cell) => {
-        if (cell.row === 1 || cell.row === 2) return;
-        const cellLen = cell.value ? String(cell.value).length : 0;
-        if (cellLen > maxLen) {
-          maxLen = cellLen;
-        }
-      });
-      column.width = Math.max(maxLen + 4, 12);
-    });
+    // SHEET 2: PETUNJUK
+    const hintSheet = workbook.addWorksheet('PETUNJUK_PENGISIAN');
+    hintSheet.addRow(['ATURAN PENGISIAN DATA MUSTAHIQ']);
+    hintSheet.addRow(['1. Jangan mengubah nama kolom di sheet DATA_MUSTAHIQ']);
+    hintSheet.addRow(['2. Kolom NAMA_LENGKAP wajib diisi']);
+    hintSheet.addRow(['3. JENIS_KELAMIN diisi L atau P']);
+    hintSheet.addRow(['4. TANGGAL_LAHIR format YYYY-MM-DD (Contoh: 2015-08-17)']);
+    hintSheet.addRow(['5. STATUS diisi: AKTIF, SURVEY, atau TIDAK_AKTIF']);
+    hintSheet.getColumn(1).width = 50;
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename=template_import_mustahiq.xlsx');
-    
+    res.setHeader('Content-Disposition', 'attachment; filename=template_mustahiq.xlsx');
     const buffer = await workbook.xlsx.writeBuffer();
     res.send(buffer);
   } catch (error) {
-    console.error('[Template Mustahiq Error]', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -733,106 +624,38 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
     const ExcelJS = require('exceljs');
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(req.file.buffer);
+    // SHEET 1: DATA (Direct access, no fuzzy scanning)
     const worksheet = workbook.worksheets[0];
-
-    let headerRowIndex = 1;
-    let headers = [];
-
-    // Scan first 15 rows to find the header row
-    for (let r = 1; r <= 15; r++) {
-      const row = worksheet.getRow(r);
-      const rowValues = [];
-      row.eachCell({ includeEmpty: true }, (cell) => {
-        let val = cell.value;
-        if (val && typeof val === 'object' && val.richText) {
-          val = val.richText.map(t => t.text).join('');
-        }
-        rowValues.push(val);
-      });
-
-      // Be very loose with matching headers
-      const hasNama = rowValues.some(val => val && String(val).includes('Nama'));
-      const hasNIK = rowValues.some(val => val && String(val).includes('NIK'));
-      const hasKategori = rowValues.some(val => val && String(val).includes('Kategori'));
-
-      if (hasNama || hasNIK || hasKategori) {
-        headerRowIndex = r;
-        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-          let val = cell.value;
-          if (val && typeof val === 'object' && val.richText) {
-            val = val.richText.map(t => t.text).join('');
-          }
-          // Clean header: remove asterisk, trim, and fuzzy match
-          const cleanHeader = val ? String(val).trim().replace(/\s*\*\s*$/, '') : '';
-          headers[colNumber] = cleanHeader;
-        });
-        break;
-      }
-    }
-
-    // Default to Row 1 headers if scanning failed
-    if (headers.length === 0) {
-      const row = worksheet.getRow(1);
-      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-        const val = cell.value ? String(cell.value).trim().replace(/\s*\*\s*$/, '') : '';
-        headers[colNumber] = val;
-      });
-      headerRowIndex = 1;
-    }
-
     const payloads = [];
+
     worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      if (rowNumber <= headerRowIndex) return;
+      if (rowNumber === 1) return; // Skip Header
 
-      const rowData = {};
-      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-        const header = headers[colNumber];
-        if (header) {
-          let cellVal = cell.value;
-          if (cellVal && typeof cellVal === 'object') {
-            if (cellVal.richText) {
-              cellVal = cellVal.richText.map(t => t.text).join('');
-            } else if (cellVal.result !== undefined) {
-              cellVal = cellVal.result;
-            } else if (cellVal.text) {
-              cellVal = cellVal.text;
-            }
-          }
-          rowData[header] = cellVal;
+      const getVal = (col) => {
+        const cell = row.getCell(col);
+        let cellVal = cell.value;
+        if (cellVal && typeof cellVal === 'object') {
+          if (cellVal.richText) cellVal = cellVal.richText.map(t => t.text).join('');
+          else if (cellVal.result !== undefined) cellVal = cellVal.result;
+          else if (cellVal.text) cellVal = cellVal.text;
         }
-      });
-
-      // --- ULTRA ROBUST VALUE PICKER ---
-      const getVal = (keywords) => {
-        const key = Object.keys(rowData).find(k => 
-          keywords.some(kw => String(k).toLowerCase().includes(kw.toLowerCase()))
-        );
-        return key ? rowData[key] : '';
+        return cellVal;
       };
 
-      const rawNik = getVal(['NIK']);
-      const rawNama = getVal(['Nama Lengkap', 'Nama']);
-      const rawKategori = getVal(['Kategori']) || 'DHUAFA';
-      const rawGender = getVal(['Jenis Kelamin', 'Gender', 'Kelamin', 'Sex']);
-      const rawTanggalLahir = getVal(['Tanggal Lahir', 'Lahir', 'Birth']);
-      const rawAlamat = getVal(['Alamat Lengkap', 'Alamat', 'Tempat Tinggal', 'Domisili']);
-      const rawTelepon = getVal(['No Telepon', 'Telepon', 'HP', 'WA', 'WhatsApp']);
-      const rawWali = getVal(['Wali', 'Kerabat', 'Orang Tua']);
-      const rawAsuh = getVal(['Orang Tua Asuh', 'Asuh', 'Donatur']);
-      const rawStatus = getVal(['Status']) || 'SURVEY';
-      const rawCatatan = getVal(['Catatan', 'Keterangan', 'Info']);
+      const rawNik = getVal(1);
+      const rawNama = getVal(2);
+      const rawKategori = getVal(3) || 'DHUAFA';
+      const rawGender = getVal(4);
+      const rawTanggalLahir = getVal(5);
+      const rawAlamat = getVal(6);
+      const rawTelepon = getVal(7);
+      const rawWali = getVal(8);
+      const rawAsuh = getVal(9);
+      const rawStatus = getVal(10) || 'SURVEY';
+      const rawCatatan = getVal(11);
 
-      // --- HARDENING: IGNORE NON-DATA ROWS (FOOTERS/NOTES) ---
       const cleanNama = String(rawNama || '').trim();
-      const blacklistedNames = ['catatan', 'aturan', 'kolom', 'jenis kelamin', 'status kelayakan', 'nik harus', 'nama lengkap'];
-      
-      if (!cleanNama || 
-          cleanNama === '' || 
-          cleanNama === 'Budi Santoso' || 
-          cleanNama === 'Aisyah Putri' ||
-          blacklistedNames.some(bn => cleanNama.toLowerCase().includes(bn))) {
-        return;
-      }
+      if (!cleanNama) return;
 
       // Ensure mandatory fields for Prisma
       const finalAlamat = String(rawAlamat || '').trim() || 'Alamat tidak diisi';
