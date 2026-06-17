@@ -862,6 +862,17 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
           }
         }
 
+        // --- HARDENING: PREVENT DUPLICATE NIK PER TENANT ---
+        // If NIK is provided, we must check if it already exists for this tenant
+        // to avoid Prisma P2002 Unique Constraint violation during createMany
+        if (parsedNik) {
+          const isDuplicate = payloads.some(p => p.nik === parsedNik);
+          if (isDuplicate) {
+            console.warn(`[Import Excel] Duplicate NIK in Excel file for ${rawNama}: ${parsedNik}. Skipping NIK.`);
+            parsedNik = null; // Nullify NIK so it can still be imported as a new record without NIK
+          }
+        }
+
         payloads.push({
           nik: parsedNik,
           nama_lengkap: String(rawNama).trim(),
@@ -889,8 +900,31 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
       tenant_id: tenantId
     }));
 
+    // --- HARDENING: DATABASE-LEVEL DUPLICATE CHECK ---
+    // Even after cleaning the Excel list, we must check against the existing DB
+    // to avoid Unique Constraint violation on [tenant_id, nik]
+    const nipsInExcel = dataWithTenant.filter(p => p.nik).map(p => p.nik);
+    const existingMustahiq = await prisma.mustahiq.findMany({
+      where: {
+        tenant_id: tenantId,
+        nik: { in: nipsInExcel }
+      },
+      select: { nik: true }
+    });
+
+    const existingNips = new Set(existingMustahiq.map(m => m.nik));
+    
+    // If NIK already exists in DB for this tenant, set it to null for the new import
+    // so it creates a new record instead of crashing the whole process
+    const finalData = dataWithTenant.map(p => {
+      if (p.nik && existingNips.has(p.nik)) {
+        return { ...p, nik: null };
+      }
+      return p;
+    });
+
     const createRes = await prisma.mustahiq.createMany({
-      data: dataWithTenant,
+      data: finalData,
       skipDuplicates: true
     });
 
