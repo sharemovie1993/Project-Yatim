@@ -743,17 +743,28 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
       const row = worksheet.getRow(r);
       const rowValues = [];
       row.eachCell({ includeEmpty: true }, (cell) => {
-        rowValues.push(cell.value);
+        let val = cell.value;
+        if (val && typeof val === 'object' && val.richText) {
+          val = val.richText.map(t => t.text).join('');
+        }
+        rowValues.push(val);
       });
 
-      const hasNama = rowValues.some(val => val && typeof val === 'string' && (val.includes('Nama Lengkap') || val.includes('Nama')));
-      const hasNIK = rowValues.some(val => val && typeof val === 'string' && val.includes('NIK'));
+      // Be very loose with matching headers
+      const hasNama = rowValues.some(val => val && String(val).includes('Nama'));
+      const hasNIK = rowValues.some(val => val && String(val).includes('NIK'));
+      const hasKategori = rowValues.some(val => val && String(val).includes('Kategori'));
 
-      if (hasNama || hasNIK) {
+      if (hasNama || hasNIK || hasKategori) {
         headerRowIndex = r;
         row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-          const val = cell.value ? String(cell.value).trim().replace(/\s*\*\s*$/, '') : '';
-          headers[colNumber] = val;
+          let val = cell.value;
+          if (val && typeof val === 'object' && val.richText) {
+            val = val.richText.map(t => t.text).join('');
+          }
+          // Clean header: remove asterisk, trim, and fuzzy match
+          const cleanHeader = val ? String(val).trim().replace(/\s*\*\s*$/, '') : '';
+          headers[colNumber] = cleanHeader;
         });
         break;
       }
@@ -794,7 +805,7 @@ router.post('/import-excel', upload.single('file'), async (req, res) => {
 
       const rawNik = rowData['NIK'];
       const rawNama = rowData['Nama Lengkap'] || rowData['Nama'] || '';
-      const rawKategori = rowData['Kategori'] || 'DHUAFA';
+      const rawKategori = rowData['Kategori'] || rowData['Kategori *'] || 'DHUAFA';
       const rawGender = rowData['Jenis Kelamin (L/P)'] || rowData['Jenis Kelamin'] || rowData['Gender'] || '';
       const rawTanggalLahir = rowData['Tanggal Lahir (YYYY-MM-DD)'] || rowData['Tanggal Lahir'] || '';
       const rawAlamat = rowData['Alamat Lengkap'] || rowData['Alamat'] || rowData['Alamat Rumah'] || '';
