@@ -92,6 +92,11 @@ class LicenseVerifier {
           settings.license_expires_at = decoded.expires_at;
           settings.school_name = decoded.school_name || tenant.name;
 
+          // If core license includes VPN addon, automatically copy it to vpn_license_key
+          if (decoded.include_vpn || decoded.vpn_enabled || result.include_vpn) {
+            settings.vpn_license_key = licenseKey.trim();
+          }
+
           await prisma.tenant.update({
             where: { id: tenantId },
             data: {

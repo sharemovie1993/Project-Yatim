@@ -315,6 +315,16 @@ export default function Billing() {
       }
       if (profile.data?.settings?.vpn_license_key) {
         setVpnLicenseKey(profile.data.settings.vpn_license_key);
+      } else if (profile.data?.settings?.license_token) {
+        try {
+          const parts = profile.data.settings.license_token.split('.');
+          if (parts.length === 3) {
+            const decoded = JSON.parse(atob(parts[1]));
+            if (decoded && (decoded.include_vpn || decoded.vpn_enabled)) {
+              setVpnLicenseKey(profile.data.license_key || '');
+            }
+          }
+        } catch (e) {}
       }
 
       // Fetch payment channels
@@ -529,7 +539,12 @@ export default function Billing() {
             await ApiService.updateTenantProfile(null, { vpn_license_key: key });
             setVpnLicenseKey(key);
           } else {
-            await ApiService.updateTenantProfile(null, { license_key: key });
+            const profilePayload = { license_key: key };
+            if (licenseDetails.include_vpn || licenseDetails.vpn_enabled) {
+              profilePayload.vpn_license_key = key;
+              setVpnLicenseKey(key);
+            }
+            await ApiService.updateTenantProfile(null, profilePayload);
             await ApiService.syncLicense();
           }
           
